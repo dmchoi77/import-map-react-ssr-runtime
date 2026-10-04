@@ -51,9 +51,7 @@ export class ManifestError extends Error {
 
 const DEFAULT_BASE_URL = 'https://mfe-ssr.invalid/';
 
-export function validateManifest(
-  manifest: unknown,
-): asserts manifest is RemoteManifest {
+export function validateManifest(manifest: unknown): asserts manifest is RemoteManifest {
   if (!isRecord(manifest) || !isRecord(manifest.imports)) {
     throw new ManifestError(
       'INVALID_MANIFEST',
@@ -67,11 +65,7 @@ export function validateManifest(
 
   if (manifest.scopes !== undefined) {
     if (!isRecord(manifest.scopes)) {
-      throw new ManifestError(
-        'INVALID_MANIFEST',
-        'Manifest scopes must be an object.',
-        'scopes',
-      );
+      throw new ManifestError('INVALID_MANIFEST', 'Manifest scopes must be an object.', 'scopes');
     }
 
     for (const [scope, mappings] of Object.entries(manifest.scopes)) {
@@ -88,10 +82,7 @@ export function validateManifest(
   }
 }
 
-export function toImportMap(
-  manifest: RemoteManifest,
-  target: ResolverTarget,
-): ImportMap {
+export function toImportMap(manifest: RemoteManifest, target: ResolverTarget): ImportMap {
   validateManifest(manifest);
 
   const importMap: ImportMap = {
@@ -148,9 +139,7 @@ export function createManifestResolver(
         ? resolveMapping(scopedMappings, specifier, target, baseUrl)
         : undefined;
 
-      return (
-        scopedMatch ?? resolveMapping(manifest.imports, specifier, target, baseUrl)
-      );
+      return scopedMatch ?? resolveMapping(manifest.imports, specifier, target, baseUrl);
     },
   };
 }
@@ -176,10 +165,7 @@ function validateMappings(
     const entry = rawEntry as Partial<RemoteManifestEntry>;
     validateEntry(entry, `${path}.${specifier}`);
 
-    if (
-      specifier.endsWith('/') &&
-      (!entry.client.endsWith('/') || !entry.server.endsWith('/'))
-    ) {
+    if (specifier.endsWith('/') && (!entry.client.endsWith('/') || !entry.server.endsWith('/'))) {
       throw new ManifestError(
         'INVALID_URL',
         'Prefix specifiers require both client and server addresses to end with /.',
@@ -277,11 +263,7 @@ function assertModuleAddress(
   target: ResolverTarget,
 ): asserts value is string {
   if (!isNonEmptyString(value)) {
-    throw new ManifestError(
-      'INVALID_URL',
-      'Module addresses must be non-empty strings.',
-      path,
-    );
+    throw new ManifestError('INVALID_URL', 'Module addresses must be non-empty strings.', path);
   }
 
   const isRelative = isRelativeUrl(value) || value.startsWith('/');
@@ -295,9 +277,8 @@ function assertModuleAddress(
 
   if (isAbsoluteUrl(value)) {
     const protocol = new URL(value).protocol;
-    const allowedProtocols = target === 'client'
-      ? new Set(['http:', 'https:'])
-      : new Set(['file:', 'http:', 'https:']);
+    const allowedProtocols =
+      target === 'client' ? new Set(['http:', 'https:']) : new Set(['file:', 'http:', 'https:']);
 
     if (!allowedProtocols.has(protocol)) {
       throw new ManifestError(
@@ -307,7 +288,6 @@ function assertModuleAddress(
       );
     }
   }
-
 }
 
 function assertAbsoluteUrl(
@@ -316,17 +296,12 @@ function assertAbsoluteUrl(
   target: ResolverTarget,
 ): asserts value is string {
   if (!isNonEmptyString(value) || !isAbsoluteUrl(value)) {
-    throw new ManifestError(
-      'INVALID_URL',
-      'baseUrl must be an absolute URL.',
-      path,
-    );
+    throw new ManifestError('INVALID_URL', 'baseUrl must be an absolute URL.', path);
   }
 
   const protocol = new URL(value).protocol;
-  const allowedProtocols = target === 'client'
-    ? new Set(['http:', 'https:'])
-    : new Set(['file:', 'http:', 'https:']);
+  const allowedProtocols =
+    target === 'client' ? new Set(['http:', 'https:']) : new Set(['file:', 'http:', 'https:']);
 
   if (!allowedProtocols.has(protocol)) {
     throw new ManifestError(
@@ -337,10 +312,7 @@ function assertAbsoluteUrl(
   }
 }
 
-function toUrlMappings(
-  mappings: ManifestMapping,
-  target: ResolverTarget,
-): Record<string, string> {
+function toUrlMappings(mappings: ManifestMapping, target: ResolverTarget): Record<string, string> {
   return Object.fromEntries(
     Object.entries(mappings).map(([specifier, entry]) => [specifier, entry[target]]),
   );
@@ -376,11 +348,7 @@ function findScopedMappings(
   }
 
   if (!isAbsoluteUrl(parentUrl)) {
-    throw new ManifestError(
-      'INVALID_URL',
-      'parentUrl must be an absolute URL.',
-      'parentUrl',
-    );
+    throw new ManifestError('INVALID_URL', 'parentUrl must be an absolute URL.', 'parentUrl');
   }
 
   const resolvedParentUrl = new URL(parentUrl, baseUrl).href;

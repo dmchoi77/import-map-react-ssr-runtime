@@ -2,16 +2,22 @@
   "name": "import-map-react-ssr-runtime",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@9.6.0",
   "scripts": {
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "pnpm --filter @mfe-ssr/core build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "oxfmt": "^0.71.0",
+    "oxlint": "^1.86.0",
     "tsdown": "^0.23.0",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"
-  }
+  },
+  "packageManager": "pnpm@9.6.0"
 }

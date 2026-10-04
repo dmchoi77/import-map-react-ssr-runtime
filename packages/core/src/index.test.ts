@@ -172,9 +172,11 @@ describe('createManifestResolver', () => {
       baseUrl: 'https://app.example.com/',
     });
 
-    expect(resolver.resolve('@mfe/cart', 'https://app.example.com/checkout/page'))
-      .toBe('https://cdn.example.com/cart-checkout/client.js');
-    expect(resolver.resolve('@mfe/cart', 'https://app.example.com/account/page'))
-      .toBe('https://cdn.example.com/cart/client.js');
+    expect(resolver.resolve('@mfe/cart', 'https://app.example.com/checkout/page')).toBe(
+      'https://cdn.example.com/cart-checkout/client.js',
+    );
+    expect(resolver.resolve('@mfe/cart', 'https://app.example.com/account/page')).toBe(
+      'https://cdn.example.com/cart/client.js',
+    );
   });
 });
