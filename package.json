@@ -12,6 +12,7 @@
     "test:react-matrix": "pnpm test && pnpm test:react18",
     "test:watch": "vitest",
     "test:loader-integration": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/node build && node --test packages/node/integration/loader.test.mjs",
+    "test:package-consumer": "pnpm build && node scripts/package-consumer-test.mjs",
     "test:e2e": "pnpm build && playwright test",
     "start": "pnpm --filter @mfe-ssr/fixture-react-host start",
     "dev": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/react build && pnpm --parallel --filter @mfe-ssr/fixture-react-host --filter @mfe-ssr/fixture-react-remote run dev",
