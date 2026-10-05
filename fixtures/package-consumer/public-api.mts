@@ -23,7 +23,10 @@ import {
 } from '@mfe-ssr/node';
 import { initialize, load, resolve } from '@mfe-ssr/node/loader';
 import { renderReactRemote, type ReactRemoteModule } from '@mfe-ssr/react';
-import { renderReactRemote as renderReactRemoteFromServer } from '@mfe-ssr/react/server';
+import {
+  renderReactRemote as renderReactRemoteFromServer,
+  renderReactRemoteToStream,
+} from '@mfe-ssr/react/server';
 
 const manifest = {
   imports: {
@@ -87,6 +90,11 @@ const serverHtml: string = renderReactRemoteFromServer({
   remote,
   props: { count: 2 },
 });
+const streamedHtml: AsyncIterable<Uint8Array> = renderReactRemoteToStream({
+  specifier: '@mfe/consumer',
+  remote,
+  props: { count: 2 },
+});
 
 // @ts-expect-error React remote props are checked against the component contract.
 renderReactRemote({ specifier: '@mfe/consumer', remote, props: { name: 'wrong shape' } });
@@ -102,4 +110,5 @@ void [
   integrityErrorCode,
   html,
   serverHtml,
+  streamedHtml,
 ];

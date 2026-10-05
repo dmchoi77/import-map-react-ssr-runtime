@@ -85,6 +85,105 @@ describe('React fixture host', () => {
     expect(html).toContain('Remote unavailable');
   });
 
+  it('streams the host shell before a delayed remote resolves', async () => {
+    let resolveRemote;
+    const remoteModule = new Promise((resolve) => {
+      resolveRemote = resolve;
+    });
+    fixture = await createFixtureServer({
+      loadRemote: () => remoteModule,
+    });
+
+    const response = await fetch(`${fixture.origin}/stream`);
+    expect(response.status).toBe(200);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let html = '';
+    while (!html.includes('host-status')) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      html += decoder.decode(value, { stream: true });
+    }
+
+    expect(html).toContain('SSR ready');
+    expect(html).not.toContain('data-mfe-react-root="counter-root"');
+    resolveRemote(await import(remoteModules.get('@mfe/fixture/counter')));
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      html += decoder.decode(value, { stream: true });
+    }
+    html += decoder.decode();
+
+    expect(html).toContain('data-mfe-react-root="counter-root"');
+    expect(html.replace(/<!--.*?-->/g, '')).toContain('Count: 0');
+    expect(html).toContain('data-mfe-react-hydration="counter-root"');
+    expect(html).toContain('</html>');
+  });
+
+  it('streams a fallback and closes the response when a streamed remote is unavailable', async () => {
+    fixture = await createFixtureServer({
+      loadRemote: async () => {
+        throw new Error('fixture remote unavailable');
+      },
+    });
+
+    const response = await fetch(`${fixture.origin}/stream-failure`);
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(html).toContain('id="host-app-root"');
+    expect(html).toContain('data-mfe-fallback="server"');
+    expect(html).toContain('Remote unavailable');
+    expect(html).toContain('</html>');
+  });
+
+  it('aborts a pending remote load when the streaming client disconnects', async () => {
+    let markRemoteStarted;
+    let markRemoteAborted;
+    const remoteStarted = new Promise((resolve) => {
+      markRemoteStarted = resolve;
+    });
+    const remoteAborted = new Promise((resolve) => {
+      markRemoteAborted = resolve;
+    });
+    fixture = await createFixtureServer({
+      loadRemote: (_specifier, { signal }) => {
+        markRemoteStarted();
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              markRemoteAborted();
+              reject(new Error('remote load aborted'));
+            },
+            { once: true },
+          );
+        });
+      },
+    });
+
+    const response = await fetch(`${fixture.origin}/stream`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let shell = '';
+    while (!shell.includes('host-status')) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      shell += decoder.decode(value, { stream: true });
+    }
+    await remoteStarted;
+    await reader.cancel();
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('The remote load was not aborted.')), 1000);
+      remoteAborted.then(() => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+  });
+
   it('serves client entries separately from server entries', async () => {
     fixture = await createFixtureServer({
       loadRemote: async (specifier) => {

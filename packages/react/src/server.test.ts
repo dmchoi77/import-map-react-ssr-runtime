@@ -1,7 +1,9 @@
-import { createElement, useId } from 'react';
+import { finished } from 'node:stream/promises';
+
+import { createElement, lazy, Suspense, useId } from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { renderReactRemote } from './server';
+import { renderReactRemote, renderReactRemoteToStream } from './server';
 import type { ReactRemoteModule } from './types';
 
 interface GreetingProps {
@@ -142,5 +144,111 @@ describe('renderReactRemote', () => {
         props: { name: BigInt(1) } as unknown as GreetingProps,
       }),
     ).toThrowError(/JSON serializable/);
+  });
+});
+
+describe('renderReactRemoteToStream', () => {
+  it('streams a Suspense shell before delayed content and appends its hydration contract', async () => {
+    const DelayedContent = lazy(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 250));
+      return {
+        default: () => createElement('p', null, 'Remote content ready'),
+      };
+    });
+    const suspenseRemote: ReactRemoteModule = {
+      default: () =>
+        createElement(
+          'section',
+          null,
+          createElement('h1', null, 'Remote shell'),
+          createElement(
+            Suspense,
+            { fallback: createElement('p', null, 'Loading remote') },
+            createElement(DelayedContent),
+          ),
+        ),
+    };
+    const stream = renderReactRemoteToStream({
+      specifier: '@mfe/delayed',
+      remote: suspenseRemote,
+      props: {},
+      rootId: 'streamed-root',
+    });
+    const chunks: Buffer[] = [];
+    let resolveShell: (markup: string) => void = () => {};
+    const shell = new Promise<string>((resolve) => {
+      resolveShell = resolve;
+    });
+    let partialMarkup = '';
+    stream.on('data', (chunk: Buffer) => {
+      chunks.push(Buffer.from(chunk));
+      partialMarkup += chunk.toString();
+      if (partialMarkup.includes('Loading remote')) resolveShell(partialMarkup);
+    });
+
+    const startedAt = Date.now();
+    const shellMarkup = await shell;
+    expect(Date.now() - startedAt).toBeLessThan(200);
+    expect(shellMarkup).toContain('Remote shell');
+    expect(shellMarkup).not.toContain('Remote content ready');
+
+    await finished(stream);
+    const markup = Buffer.concat(chunks).toString();
+    expect(markup).toContain('<div id="streamed-root" data-mfe-react-root="streamed-root">');
+    expect(markup).toContain('Remote content ready');
+    expect(markup).toContain(
+      'data-mfe-react-hydration="streamed-root">{"specifier":"@mfe/delayed","props":{},"identifierPrefix":"streamed-root-"}</script>',
+    );
+  });
+
+  it('closes with an abort error when the caller cancels rendering', async () => {
+    const controller = new AbortController();
+    const NeverLoaded = lazy(() => new Promise<never>(() => {}));
+    const suspenseRemote: ReactRemoteModule = {
+      default: () =>
+        createElement(
+          'section',
+          null,
+          createElement('h1', null, 'Abort shell'),
+          createElement(
+            Suspense,
+            { fallback: createElement('p', null, 'Loading forever') },
+            createElement(NeverLoaded),
+          ),
+        ),
+    };
+    const stream = renderReactRemoteToStream({
+      specifier: '@mfe/stalled',
+      remote: suspenseRemote,
+      props: {},
+      signal: controller.signal,
+    });
+    const completion = finished(stream);
+    let resolveFallback: () => void = () => {};
+    const fallback = new Promise<void>((resolve) => {
+      resolveFallback = resolve;
+    });
+    stream.on('data', (chunk: Buffer) => {
+      if (chunk.toString().includes('Loading forever')) resolveFallback();
+    });
+    await fallback;
+    controller.abort();
+
+    await expect(completion).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('fails the stream when a remote throws during rendering', async () => {
+    const failingRemote: ReactRemoteModule = {
+      default: () => {
+        throw new Error('remote render failed');
+      },
+    };
+    const stream = renderReactRemoteToStream({
+      specifier: '@mfe/failing',
+      remote: failingRemote,
+      props: {},
+    });
+
+    await expect(finished(stream)).rejects.toThrow('remote render failed');
   });
 });

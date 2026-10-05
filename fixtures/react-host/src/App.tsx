@@ -1,4 +1,4 @@
-export type FixturePage = 'home' | 'failure';
+export type FixturePage = 'home' | 'failure' | 'stream';
 
 export interface HostAppProps {
   page: FixturePage;

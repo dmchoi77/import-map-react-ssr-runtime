@@ -13,6 +13,26 @@ test('renders remote content when JavaScript is disabled', async ({ browser }) =
   await context.close();
 });
 
+test('streams remote markup and hydrates it in the browser', async ({ page }) => {
+  const response = await page.goto('/stream', { waitUntil: 'commit' });
+
+  expect(response?.status()).toBe(200);
+  await expect(page.locator('#host-status')).toHaveText('SSR ready');
+  const counterButton = page.locator('#counter-increment');
+  await expect(counterButton).toHaveText('Count: 0');
+  await page.waitForLoadState('networkidle');
+  await counterButton.click();
+  await expect(counterButton).toHaveText('Count: 1');
+});
+
+test('streams and closes with the fallback when a remote cannot be loaded', async ({ page }) => {
+  const response = await page.goto('/stream-failure');
+
+  expect(response?.status()).toBe(200);
+  await expect(page.locator('#host-status')).toHaveText('SSR ready');
+  await expect(page.locator('[data-mfe-fallback="server"]')).toContainText('Remote unavailable');
+});
+
 test('hydrates independent remotes and keeps their SSR roots interactive', async ({ page }) => {
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
