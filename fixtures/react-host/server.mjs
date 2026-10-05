@@ -13,7 +13,10 @@ import {
   createModulePreloadLinks,
   serializeImportMap,
 } from '@mfe-ssr/import-map';
-import { renderReactRemoteBySpecifierToStream } from '@mfe-ssr/react/server';
+import {
+  renderReactRemoteBySpecifier,
+  renderReactRemoteBySpecifierToStream,
+} from '@mfe-ssr/react/server';
 
 import { createClientManifest } from '../react-remote/manifest.mjs';
 
@@ -193,9 +196,8 @@ async function renderHomePage({
   ];
   const remoteResults = await Promise.all(
     remotes.map(async (remoteOptions) => {
-      const chunks = [];
       try {
-        const remoteStream = renderReactRemoteBySpecifierToStream({
+        const markup = await renderReactRemoteBySpecifier({
           ...remoteOptions,
           fallback: 'Loading remote',
           errorFallback: 'Remote unavailable',
@@ -206,8 +208,7 @@ async function renderHomePage({
             return loadRemote(specifier, { signal });
           },
         });
-        for await (const chunk of remoteStream) chunks.push(Buffer.from(chunk));
-        return { markup: Buffer.concat(chunks).toString(), shouldHydrate: true };
+        return { markup, shouldHydrate: true };
       } catch {
         return {
           markup: renderRouteRemoteFallback(remoteOptions.rootId),

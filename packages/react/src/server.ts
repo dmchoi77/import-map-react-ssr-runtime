@@ -48,6 +48,9 @@ export interface RenderReactRemoteBySpecifierStreamOptions<Props extends object>
   ) => Promise<ReactRemoteModule<Props>>;
 }
 
+export type RenderReactRemoteBySpecifierOptions<Props extends object> =
+  RenderReactRemoteBySpecifierStreamOptions<Props>;
+
 let nextGeneratedRootId = 0;
 
 export function renderReactRemote<Props extends object>(
@@ -184,6 +187,23 @@ export function renderReactRemoteBySpecifierToStream<Props extends object>(
     });
     throw error;
   }
+}
+
+/**
+ * Renders a remote selected by its import-map specifier without exposing stream handling.
+ * The stream API remains available for hosts that need progressive SSR output.
+ */
+export async function renderReactRemoteBySpecifier<Props extends object>(
+  options: RenderReactRemoteBySpecifierOptions<Props>,
+): Promise<string> {
+  const chunks: Buffer[] = [];
+  const stream = renderReactRemoteBySpecifierToStream(options);
+
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks).toString();
 }
 
 function renderPreparedReactRemoteToStream(

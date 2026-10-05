@@ -6,6 +6,7 @@ import { createElement, lazy, Suspense, useId } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import {
+  renderReactRemoteBySpecifier,
   renderReactRemote,
   renderReactRemoteBySpecifierToStream,
   renderReactRemoteToStream,
@@ -316,6 +317,19 @@ describe('renderReactRemoteToStream', () => {
 });
 
 describe('renderReactRemoteBySpecifierToStream', () => {
+  it('renders a remote by specifier without exposing stream handling', async () => {
+    const markup = await renderReactRemoteBySpecifier<GreetingProps>({
+      specifier: '@mfe/greeting',
+      props: { name: 'Ada' },
+      rootId: 'specifier-string-root',
+      loadRemote: async () => remote,
+    });
+
+    expect(markup).toContain('Hello Ada');
+    expect(markup).toContain('data-mfe-react-root="specifier-string-root"');
+    expect(markup).toContain('"specifier":"@mfe/greeting"');
+  });
+
   it('reports remote load failure and completed fallback as separate outcomes', async () => {
     const events: unknown[] = [];
     const stream = renderReactRemoteBySpecifierToStream<GreetingProps>({

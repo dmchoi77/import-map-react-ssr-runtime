@@ -126,6 +126,7 @@ assert.equal(typeof importMap.createBrowserImportMap, 'function');
 assert.equal(typeof importMap.serializeImportMap, 'function');
 assert.equal(typeof importMap.createModulePreloadLinks, 'function');
 assert.equal(reactRuntime.renderReactRemote, reactServer.renderReactRemote);
+assert.equal(typeof reactServer.renderReactRemoteBySpecifier, 'function');
 assert.equal(typeof reactServer.renderReactRemoteToStream, 'function');
 assert.equal(typeof reactServer.renderReactRemoteBySpecifierToStream, 'function');
 assert.equal(typeof reactClient.hydrateReactRemotes, 'function');
@@ -183,6 +184,14 @@ for await (const chunk of reactServer.renderReactRemoteBySpecifierToStream({
 const specifierMarkup = Buffer.concat(specifierChunks).toString();
 assert.match(specifierMarkup, /Specifier consumer/);
 assert.match(specifierMarkup, /data-mfe-react-hydration="packed-specifier-root"/);
+
+const specifierHtml = await reactServer.renderReactRemoteBySpecifier({
+  specifier,
+  props: {},
+  rootId: 'packed-specifier-string-root',
+});
+assert.match(specifierHtml, /Specifier consumer/);
+assert.match(specifierHtml, /data-mfe-react-hydration="packed-specifier-string-root"/);
 
 await import('@mfe-ssr/react/bootstrap');
 console.log('Tarball consumer smoke passed.');

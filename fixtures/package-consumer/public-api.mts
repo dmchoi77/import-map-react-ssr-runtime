@@ -30,6 +30,7 @@ import { initialize, load, resolve } from '@mfe-ssr/node/loader';
 import { renderReactRemote, type ReactRemoteModule } from '@mfe-ssr/react';
 import {
   renderReactRemote as renderReactRemoteFromServer,
+  renderReactRemoteBySpecifier,
   renderReactRemoteBySpecifierToStream,
   renderReactRemoteToStream,
 } from '@mfe-ssr/react/server';
@@ -126,6 +127,11 @@ const specifierStream: AsyncIterable<Uint8Array> = renderReactRemoteBySpecifierT
   loadRemote: async () => remote,
   timeoutMs: 1_000,
 });
+const specifierHtml: Promise<string> = renderReactRemoteBySpecifier({
+  specifier: '@mfe/consumer',
+  props: { count: 2 },
+  loadRemote: async () => remote,
+});
 
 // @ts-expect-error React remote props are checked against the component contract.
 renderReactRemote({ specifier: '@mfe/consumer', remote, props: { name: 'wrong shape' } });
@@ -147,5 +153,6 @@ void [
   serverHtml,
   streamedHtml,
   specifierStream,
+  specifierHtml,
   healthResults,
 ];
