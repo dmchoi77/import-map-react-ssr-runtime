@@ -4,6 +4,7 @@ import { createElement } from 'react';
 import {
   ManifestError,
   createManifestResolver,
+  type DiagnosticEvent,
   type RemoteManifest,
   validateManifest,
 } from '@mfe-ssr/core';
@@ -16,12 +17,14 @@ import {
 } from '@mfe-ssr/import-map';
 import {
   RemoteModuleFetcher,
+  checkRemoteHealth,
   createNodeResolver,
   registerNodeLoader,
   type RemoteModuleCacheOptions,
   type NodeLoaderData,
   type NodeLoaderOptions,
   type RemoteModuleErrorCode,
+  type RemoteHealthResult,
 } from '@mfe-ssr/node';
 import { initialize, load, resolve } from '@mfe-ssr/node/loader';
 import { renderReactRemote, type ReactRemoteModule } from '@mfe-ssr/react';
@@ -30,6 +33,7 @@ import {
   renderReactRemoteBySpecifierToStream,
   renderReactRemoteToStream,
 } from '@mfe-ssr/react/server';
+import { setReactDiagnosticHandler } from '@mfe-ssr/react/client';
 
 const manifest = {
   imports: {
@@ -63,6 +67,7 @@ const cacheOptions: RemoteModuleCacheOptions = {
 const nodeOptions: NodeLoaderOptions = {
   allowedOrigins: ['https://cdn.example.com'],
   cache: cacheOptions,
+  onDiagnostic: (event: DiagnosticEvent) => void event.phase,
 };
 const loaderData: NodeLoaderData = { manifest, options: nodeOptions };
 const fetcher = new RemoteModuleFetcher(nodeOptions);
@@ -72,6 +77,10 @@ const verifiedModule: Promise<string> = fetcher.fetch(
 );
 const integrityErrorCode: RemoteModuleErrorCode = 'REMOTE_INTEGRITY_MISMATCH';
 registerNodeLoader(manifest, nodeOptions);
+const healthResults: Promise<RemoteHealthResult[]> = checkRemoteHealth(manifest, {
+  allowedOrigins: ['https://cdn.example.com'],
+  onDiagnostic: (event) => void event.phase,
+});
 initialize(loaderData);
 void resolve(
   '@mfe/consumer',
@@ -99,6 +108,7 @@ const html: string = renderReactRemote({
   specifier: '@mfe/consumer',
   remote,
   props: { count: 2 },
+  onDiagnostic: (event) => void event.phase,
 });
 const serverHtml: string = renderReactRemoteFromServer({
   specifier: '@mfe/consumer',
@@ -120,6 +130,8 @@ const specifierStream: AsyncIterable<Uint8Array> = renderReactRemoteBySpecifierT
 // @ts-expect-error React remote props are checked against the component contract.
 renderReactRemote({ specifier: '@mfe/consumer', remote, props: { name: 'wrong shape' } });
 
+setReactDiagnosticHandler((event) => void event.phase);
+
 void [
   ManifestError,
   serverUrl,
@@ -135,4 +147,5 @@ void [
   serverHtml,
   streamedHtml,
   specifierStream,
+  healthResults,
 ];

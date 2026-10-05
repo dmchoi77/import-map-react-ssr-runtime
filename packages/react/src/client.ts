@@ -2,6 +2,8 @@ import { Component, createElement, lazy, Suspense } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { createRoot, hydrateRoot } from 'react-dom/client';
 
+import type { DiagnosticEventInput, DiagnosticHandler } from '@mfe-ssr/core';
+
 import { loadWithTimeout } from './load';
 import { deserializeHydrationData } from './serialize';
 import { REACT_HYDRATION_DATA_ATTRIBUTE, REACT_ROOT_MARKER_ATTRIBUTE } from './types';
@@ -12,32 +14,55 @@ import type {
 } from './types';
 
 const hydrationByRoot = new WeakMap<HTMLElement, Promise<void>>();
+let configuredDiagnosticHandler: DiagnosticHandler | undefined;
 
-export function hydrateReactRemotes(targetDocument?: Document): Promise<void> {
+export interface HydrateReactRemotesOptions {
+  onDiagnostic?: DiagnosticHandler;
+}
+
+/** Sets the optional handler used by the automatic bootstrap entry point. */
+export function setReactDiagnosticHandler(handler?: DiagnosticHandler): void {
+  configuredDiagnosticHandler = handler;
+}
+
+export function hydrateReactRemotes(
+  targetDocument?: Document,
+  options: HydrateReactRemotesOptions = {},
+): Promise<void> {
   const documentToHydrate =
     targetDocument ?? (typeof document === 'undefined' ? undefined : document);
   if (!documentToHydrate) {
     return Promise.resolve();
   }
 
+  const onDiagnostic = options.onDiagnostic ?? configuredDiagnosticHandler;
   const roots = documentToHydrate.querySelectorAll<HTMLElement>(`[${REACT_ROOT_MARKER_ATTRIBUTE}]`);
   return Promise.all(
-    Array.from(roots, (root) => hydrateRootFromContract(root, documentToHydrate)),
+    Array.from(roots, (root) => hydrateRootFromContract(root, documentToHydrate, onDiagnostic)),
   ).then(() => undefined);
 }
 
-function hydrateRootFromContract(root: HTMLElement, documentToHydrate: Document): Promise<void> {
+function hydrateRootFromContract(
+  root: HTMLElement,
+  documentToHydrate: Document,
+  onDiagnostic: DiagnosticHandler | undefined,
+): Promise<void> {
   const existingHydration = hydrationByRoot.get(root);
   if (existingHydration) {
     return existingHydration;
   }
 
-  const hydration = hydrateRootOnce(root, documentToHydrate);
+  const hydration = hydrateRootOnce(root, documentToHydrate, onDiagnostic);
   hydrationByRoot.set(root, hydration);
   return hydration;
 }
 
-async function hydrateRootOnce(root: HTMLElement, documentToHydrate: Document): Promise<void> {
+async function hydrateRootOnce(
+  root: HTMLElement,
+  documentToHydrate: Document,
+  onDiagnostic: DiagnosticHandler | undefined,
+): Promise<void> {
+  const startedAt = Date.now();
   const rootId = root.getAttribute(REACT_ROOT_MARKER_ATTRIBUTE);
 
   try {
@@ -63,11 +88,9 @@ async function hydrateRootOnce(root: HTMLElement, documentToHydrate: Document): 
     if (contract.suspense) {
       if (contract.suspense.serverFallback) {
         try {
-          const remote = await loadWithTimeout(
-            () =>
-              import(/* @vite-ignore */ contract.specifier) as Promise<
-                ReactRemoteModule<Record<string, unknown>>
-              >,
+          const remote = await loadClientRemote(
+            contract.specifier,
+            onDiagnostic,
             contract.suspense.timeoutMs,
           );
           const clientRoot = createRoot(root, {
@@ -78,25 +101,37 @@ async function hydrateRootOnce(root: HTMLElement, documentToHydrate: Document): 
               RemoteLoadErrorBoundary,
               {
                 root,
-                specifier: contract.specifier,
                 fallback: contract.suspense.errorFallback,
+                onDiagnostic,
+                startedAt,
               },
               createElement(remote.default, contract.props),
             ),
           );
-        } catch (error) {
-          renderClientFallback(root, documentToHydrate, error, contract.suspense.errorFallback);
+          reportHydration(onDiagnostic, 'success', startedAt, remote.metadata?.id);
+        } catch {
+          renderClientFallback(
+            root,
+            documentToHydrate,
+            contract.suspense.errorFallback,
+            onDiagnostic,
+            startedAt,
+            'REMOTE_IMPORT_FAILED',
+          );
         }
         return;
       }
 
-      const remotePromise = loadWithTimeout(
-        (_signal) =>
-          import(/* @vite-ignore */ contract.specifier) as Promise<
-            ReactRemoteModule<Record<string, unknown>>
-          >,
+      const remoteLoadState = { failed: false };
+      const remotePromise = loadClientRemote(
+        contract.specifier,
+        onDiagnostic,
         contract.suspense.timeoutMs,
-      );
+      ).catch((error: unknown) => {
+        remoteLoadState.failed = true;
+        reportHydration(onDiagnostic, 'failure', startedAt, undefined, 'REMOTE_IMPORT_FAILED');
+        throw error;
+      });
       void remotePromise.catch(() => {});
       const Remote = lazy(() => remotePromise.then((remote) => ({ default: remote.default })));
       hydrateRoot(
@@ -106,35 +141,61 @@ async function hydrateRootOnce(root: HTMLElement, documentToHydrate: Document): 
           { fallback: createElement('p', null, contract.suspense.fallback) },
           createElement(
             RemoteLoadErrorBoundary,
-            { root, specifier: contract.specifier, fallback: contract.suspense.errorFallback },
+            {
+              root,
+              fallback: contract.suspense.errorFallback,
+              onDiagnostic,
+              startedAt,
+              isRemoteLoadFailure: () => remoteLoadState.failed,
+            },
             createElement(Remote, contract.props),
           ),
         ),
         {
           identifierPrefix: contract.identifierPrefix,
-          onRecoverableError(error) {
-            console.error(
-              `React remote "${contract.specifier}" recovered during hydration.`,
-              error,
-            );
+          onRecoverableError(_error) {
+            if (!remoteLoadState.failed) {
+              reportHydration(
+                onDiagnostic,
+                'failure',
+                startedAt,
+                undefined,
+                'HYDRATION_RECOVERABLE_ERROR',
+              );
+            }
           },
         },
       );
-      await remotePromise.catch(() => undefined);
+      try {
+        const remote = await remotePromise;
+        reportHydration(onDiagnostic, 'success', startedAt, remote.metadata?.id);
+      } catch {}
       return;
     }
 
-    const remote = (await import(/* @vite-ignore */ contract.specifier)) as ReactRemoteModule<
-      Record<string, unknown>
-    >;
+    const remote = await loadClientRemote(contract.specifier, onDiagnostic);
     hydrateRoot(root, createElement(remote.default, contract.props), {
       identifierPrefix: contract.identifierPrefix,
-      onRecoverableError(error) {
-        console.error(`React remote "${contract.specifier}" recovered during hydration.`, error);
+      onRecoverableError(_error) {
+        reportHydration(
+          onDiagnostic,
+          'failure',
+          startedAt,
+          remote.metadata?.id,
+          'HYDRATION_RECOVERABLE_ERROR',
+        );
       },
     });
-  } catch (error) {
-    renderClientFallback(root, documentToHydrate, error);
+    reportHydration(onDiagnostic, 'success', startedAt, remote.metadata?.id);
+  } catch {
+    renderClientFallback(
+      root,
+      documentToHydrate,
+      'Remote unavailable',
+      onDiagnostic,
+      startedAt,
+      'HYDRATION_FAILED',
+    );
   }
 }
 
@@ -172,8 +233,10 @@ function isRemoteSuspenseContract(value: unknown): value is ReactRemoteSuspenseC
 
 interface RemoteLoadErrorBoundaryProps {
   root: HTMLElement;
-  specifier: string;
   fallback: string;
+  onDiagnostic?: DiagnosticHandler;
+  startedAt: number;
+  isRemoteLoadFailure?: () => boolean;
   children?: ReactNode;
 }
 
@@ -184,9 +247,17 @@ class RemoteLoadErrorBoundary extends Component<RemoteLoadErrorBoundaryProps, { 
     return { failed: true };
   }
 
-  componentDidCatch(error: Error, _info: ErrorInfo): void {
+  componentDidCatch(_error: Error, _info: ErrorInfo): void {
     this.props.root.dataset.mfeFallback = 'client';
-    console.error(`React remote "${this.props.specifier}" could not be hydrated.`, error);
+    if (!this.props.isRemoteLoadFailure?.()) {
+      reportHydration(
+        this.props.onDiagnostic,
+        'failure',
+        this.props.startedAt,
+        undefined,
+        'HYDRATION_RENDER_FAILED',
+      );
+    }
   }
 
   render(): ReactNode {
@@ -197,12 +268,78 @@ class RemoteLoadErrorBoundary extends Component<RemoteLoadErrorBoundaryProps, { 
 function renderClientFallback(
   root: HTMLElement,
   documentToHydrate: Document,
-  error: unknown,
   fallbackText = 'Remote unavailable',
+  onDiagnostic?: DiagnosticHandler,
+  startedAt = Date.now(),
+  errorCode = 'HYDRATION_FAILED',
 ): void {
   const message = documentToHydrate.createElement('p');
   message.textContent = fallbackText;
   root.replaceChildren(message);
   root.dataset.mfeFallback = 'client';
-  console.error('Remote hydration failed.', error);
+  reportHydration(onDiagnostic, 'failure', startedAt, undefined, errorCode);
+}
+
+function reportHydration(
+  handler: DiagnosticHandler | undefined,
+  outcome: 'success' | 'failure',
+  startedAt: number,
+  remoteId?: string,
+  errorCode?: string,
+): void {
+  reportClientDiagnostic(handler, {
+    phase: 'hydrate',
+    outcome,
+    durationMs: Date.now() - startedAt,
+    ...(remoteId ? { remoteId } : {}),
+    ...(errorCode ? { errorCode } : {}),
+  });
+}
+
+async function loadClientRemote(
+  specifier: string,
+  onDiagnostic: DiagnosticHandler | undefined,
+  timeoutMs?: number,
+): Promise<ReactRemoteModule<Record<string, unknown>>> {
+  const startedAt = Date.now();
+  try {
+    const load = () =>
+      import(/* @vite-ignore */ specifier) as Promise<ReactRemoteModule<Record<string, unknown>>>;
+    const remote =
+      timeoutMs === undefined ? await load() : await loadWithTimeout(() => load(), timeoutMs);
+    reportClientDiagnostic(onDiagnostic, {
+      phase: 'resolve',
+      outcome: 'success',
+      durationMs: Date.now() - startedAt,
+      ...(remote.metadata?.id ? { remoteId: remote.metadata.id } : {}),
+    });
+    return remote;
+  } catch (error) {
+    reportClientDiagnostic(onDiagnostic, {
+      phase: 'resolve',
+      outcome: 'failure',
+      durationMs: Date.now() - startedAt,
+      errorCode: 'REMOTE_IMPORT_FAILED',
+    });
+    throw error;
+  }
+}
+
+function reportClientDiagnostic(
+  handler: DiagnosticHandler | undefined,
+  event: DiagnosticEventInput,
+): void {
+  if (!handler) return;
+  try {
+    const result = handler(
+      Object.freeze({
+        ...event,
+        timestamp: new Date().toISOString(),
+        durationMs: Math.max(0, event.durationMs),
+      }),
+    );
+    void Promise.resolve(result).catch(() => {});
+  } catch {
+    // Diagnostics must not affect browser hydration.
+  }
 }

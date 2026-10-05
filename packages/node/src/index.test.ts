@@ -107,6 +107,36 @@ describe('Node loader hooks', () => {
     });
   });
 
+  it('reports mapped and native resolution outcomes without logging specifiers', async () => {
+    const events: unknown[] = [];
+    initialize({
+      manifest,
+      options: {
+        baseUrl: 'file:///srv/host/',
+        onDiagnostic: (event) => events.push(event),
+      },
+    });
+
+    await resolveHook(
+      '@mfe/counter',
+      { conditions: [], importAttributes: {}, parentURL: 'file:///srv/host/server.mjs' },
+      async () => {
+        throw new Error('mapped imports should not reach the next resolver');
+      },
+    );
+    await resolveHook(
+      'node:fs',
+      { conditions: [], importAttributes: {}, parentURL: 'file:///srv/host/server.mjs' },
+      async (specifier) => ({ url: specifier }),
+    );
+
+    expect(events).toMatchObject([
+      { phase: 'resolve', outcome: 'success', remoteId: '@mfe/counter' },
+      { phase: 'resolve', outcome: 'unmatched' },
+    ]);
+    expect(events[0]).not.toHaveProperty('specifier');
+  });
+
   it('rejects conflicting server integrity metadata for the same URL', () => {
     const shared = {
       version: '1.0.0',
@@ -141,6 +171,37 @@ describe('Node loader hooks', () => {
 });
 
 describe('RemoteModuleFetcher', () => {
+  it('reports cache and fetch outcomes without exposing URLs or source', async () => {
+    const events: unknown[] = [];
+    let calls = 0;
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      onDiagnostic: (event) => events.push(event),
+      fetch: async () => {
+        calls += 1;
+        return new Response('private module source');
+      },
+    });
+
+    await fetcher.fetch('https://cdn.example.com/private.mjs?token=private');
+    await fetcher.fetch('https://cdn.example.com/private.mjs?token=private');
+    await expect(fetcher.fetch('https://not-allowed.example.com/remote.mjs')).rejects.toMatchObject(
+      {
+        code: 'REMOTE_ORIGIN_NOT_ALLOWED',
+      },
+    );
+
+    expect(calls).toBe(1);
+    expect(events).toMatchObject([
+      { phase: 'fetch', outcome: 'success' },
+      { phase: 'fetch', outcome: 'success' },
+      { phase: 'fetch', outcome: 'failure', errorCode: 'REMOTE_ORIGIN_NOT_ALLOWED' },
+    ]);
+    expect(JSON.stringify(events)).not.toContain('private.mjs');
+    expect(JSON.stringify(events)).not.toContain('token=private');
+    expect(JSON.stringify(events)).not.toContain('private module source');
+  });
+
   it.each(['sha256', 'sha384', 'sha512'] as const)(
     'accepts a valid %s digest',
     async (algorithm) => {

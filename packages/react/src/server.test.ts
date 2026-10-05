@@ -38,6 +38,29 @@ describe('renderReactRemote', () => {
     );
   });
 
+  it('reports render outcomes without copying specifiers or props into diagnostics', () => {
+    const events: unknown[] = [];
+    const markup = renderReactRemote({
+      specifier: '@mfe/greeting?token=private',
+      remote,
+      props: { name: 'private-prop' },
+      onDiagnostic: (event) => events.push(event),
+    });
+
+    expect(markup).toContain('private-prop');
+    expect(events).toMatchObject([
+      {
+        phase: 'render',
+        outcome: 'success',
+        remoteId: '@mfe/greeting',
+        durationMs: expect.any(Number),
+        timestamp: expect.any(String),
+      },
+    ]);
+    expect(JSON.stringify(events)).not.toContain('private-prop');
+    expect(JSON.stringify(events)).not.toContain('@mfe/greeting?token=private');
+  });
+
   it('generates a root id when the caller does not need to manage one', () => {
     const markup = renderReactRemote({
       specifier: '@mfe/greeting',
@@ -132,9 +155,19 @@ describe('renderReactRemote', () => {
   });
 
   it('rejects invalid specifiers, root ids, and non-serializable props', () => {
+    const events: unknown[] = [];
     expect(() =>
-      renderReactRemote({ specifier: ' ', remote, props: { name: 'Ada' }, rootId: 'root' }),
+      renderReactRemote({
+        specifier: ' ',
+        remote,
+        props: { name: 'Ada' },
+        rootId: 'root',
+        onDiagnostic: (event) => events.push(event),
+      }),
     ).toThrowError(/specifier/);
+    expect(events).toMatchObject([
+      { phase: 'render', outcome: 'failure', errorCode: 'RENDER_FAILED' },
+    ]);
     expect(() =>
       renderReactRemote({
         specifier: '@mfe/greeting',
@@ -154,6 +187,24 @@ describe('renderReactRemote', () => {
 });
 
 describe('renderReactRemoteToStream', () => {
+  it('reports completion and remote metadata for streamed rendering', async () => {
+    const events: unknown[] = [];
+    const stream = renderReactRemoteToStream({
+      specifier: '@mfe/greeting',
+      remote,
+      props: { name: 'Ada' },
+      onDiagnostic: (event) => events.push(event),
+    });
+
+    for await (const _chunk of stream) {
+      // Consume the stream so completion diagnostics can fire.
+    }
+
+    expect(events).toMatchObject([
+      { phase: 'render', outcome: 'success', remoteId: '@mfe/greeting' },
+    ]);
+  });
+
   it('streams a Suspense shell before delayed content and appends its hydration contract', async () => {
     const DelayedContent = lazy(async () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 250));
@@ -244,6 +295,7 @@ describe('renderReactRemoteToStream', () => {
   });
 
   it('fails the stream when a remote throws during rendering', async () => {
+    const events: unknown[] = [];
     const failingRemote: ReactRemoteModule = {
       default: () => {
         throw new Error('remote render failed');
@@ -253,13 +305,41 @@ describe('renderReactRemoteToStream', () => {
       specifier: '@mfe/failing',
       remote: failingRemote,
       props: {},
+      onDiagnostic: (event) => events.push(event),
     });
 
     await expect(finished(stream)).rejects.toThrow('remote render failed');
+    expect(events).toMatchObject([
+      { phase: 'render', outcome: 'failure', errorCode: 'RENDER_FAILED' },
+    ]);
   });
 });
 
 describe('renderReactRemoteBySpecifierToStream', () => {
+  it('reports remote load failure and completed fallback as separate outcomes', async () => {
+    const events: unknown[] = [];
+    const stream = renderReactRemoteBySpecifierToStream<GreetingProps>({
+      specifier: '@mfe/private?token=never-log',
+      props: { name: 'private-prop' },
+      loadRemote: async () => {
+        throw new Error('private loader error');
+      },
+      onDiagnostic: (event) => events.push(event),
+    });
+
+    for await (const _chunk of stream) {
+      // Consume the fallback stream.
+    }
+
+    expect(events).toMatchObject([
+      { phase: 'resolve', outcome: 'failure', errorCode: 'REMOTE_LOAD_FAILED' },
+      { phase: 'render', outcome: 'success' },
+    ]);
+    expect(JSON.stringify(events)).not.toContain('private-prop');
+    expect(JSON.stringify(events)).not.toContain('never-log');
+    expect(JSON.stringify(events)).not.toContain('private loader error');
+  });
+
   it('does not start a remote loader if the request aborts before its first microtask', async () => {
     const controller = new AbortController();
     let loaderCalls = 0;

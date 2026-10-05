@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { hydrateReactRemotes } from './client';
+import { hydrateReactRemotes, setReactDiagnosticHandler } from './client';
 import { renderReactRemoteBySpecifierToStream } from './server';
 
 const COUNTER_REMOTE_SPECIFIER = pathToFileURL(
@@ -56,30 +56,43 @@ describe('hydrateReactRemotes', () => {
   });
 
   afterEach(() => {
+    setReactDiagnosticHandler(undefined);
     vi.restoreAllMocks();
   });
 
   it('imports the contract specifier natively and hydrates its SSR root', async () => {
     const root = appendRemoteRoot();
+    const events: unknown[] = [];
 
     await act(async () => {
-      await hydrateReactRemotes(document);
+      await hydrateReactRemotes(document, { onDiagnostic: (event) => events.push(event) });
     });
 
+    expect(events).toMatchObject([
+      { phase: 'resolve', outcome: 'success' },
+      { phase: 'hydrate', outcome: 'success' },
+    ]);
     expect(root.dataset.mfeFallback).toBeUndefined();
     act(() => root.querySelector('button')?.click());
     expect(root.textContent).toBe('Count: 1');
   });
 
   it('shows a safe fallback when a remote module cannot be imported', async () => {
-    const root = appendRemoteRoot({ specifier: MISSING_REMOTE_SPECIFIER });
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const root = appendRemoteRoot({
+      specifier: `${MISSING_REMOTE_SPECIFIER}?token=not-logged`,
+    });
+    const events: unknown[] = [];
 
-    await hydrateReactRemotes(document);
+    await hydrateReactRemotes(document, { onDiagnostic: (event) => events.push(event) });
 
     expect(root.dataset.mfeFallback).toBe('client');
     expect(root.textContent).toBe('Remote unavailable');
-    expect(consoleError).toHaveBeenCalledOnce();
+    expect(events).toMatchObject([
+      { phase: 'resolve', outcome: 'failure', errorCode: 'REMOTE_IMPORT_FAILED' },
+      { phase: 'hydrate', outcome: 'failure', errorCode: 'HYDRATION_FAILED' },
+    ]);
+    expect(JSON.stringify(events)).not.toContain('not-logged');
+    expect(JSON.stringify(events)).not.toContain(MISSING_REMOTE_SPECIFIER);
   });
 
   it('shows a fallback for a malformed hydration contract without breaking other roots', async () => {
@@ -89,8 +102,6 @@ describe('hydrateReactRemotes', () => {
       'script[data-mfe-react-hydration="counter-root"]',
     );
     contract!.textContent = '{invalid json';
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-
     await act(async () => {
       await hydrateReactRemotes(document);
     });
@@ -135,15 +146,18 @@ describe('hydrateReactRemotes', () => {
     expect(fallbackWasStreamed).toBe(true);
     setStreamedMarkup(Buffer.concat(serverChunks).toString());
     const root = document.querySelector<HTMLElement>('#fallback-root')!;
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const events: unknown[] = [];
 
     await act(async () => {
-      await hydrateReactRemotes(document);
+      await hydrateReactRemotes(document, { onDiagnostic: (event) => events.push(event) });
     });
 
     expect(root.querySelectorAll('#counter-increment')).toHaveLength(1);
     expect(root.textContent).toBe('Count: 0');
-    expect(consoleError).not.toHaveBeenCalled();
+    expect(events).toMatchObject([
+      { phase: 'resolve', outcome: 'success' },
+      { phase: 'hydrate', outcome: 'success' },
+    ]);
     act(() => root.querySelector('button')?.click());
     expect(root.textContent).toBe('Count: 1');
   });
@@ -170,15 +184,35 @@ describe('hydrateReactRemotes', () => {
     for await (const chunk of serverStream) serverChunks.push(Buffer.from(chunk));
     setStreamedMarkup(Buffer.concat(serverChunks).toString());
     const root = document.querySelector<HTMLElement>('#client-reject-root')!;
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const events: unknown[] = [];
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => {
+      await hydrateReactRemotes(document, { onDiagnostic: (event) => events.push(event) });
+    });
+
+    expect(root.textContent).toBe('Remote unavailable');
+    expect(root.dataset.mfeFallback).toBe('client');
+    expect(events).toMatchObject([
+      { phase: 'resolve', outcome: 'failure', errorCode: 'REMOTE_IMPORT_FAILED' },
+      { phase: 'hydrate', outcome: 'failure', errorCode: 'REMOTE_IMPORT_FAILED' },
+    ]);
+  });
+
+  it('uses the configured handler for the automatic bootstrap entry point', async () => {
+    const root = appendRemoteRoot();
+    const events: unknown[] = [];
+    setReactDiagnosticHandler((event) => events.push(event));
 
     await act(async () => {
       await hydrateReactRemotes(document);
     });
 
-    expect(root.textContent, JSON.stringify(consoleError.mock.calls)).toBe('Remote unavailable');
-    expect(root.dataset.mfeFallback).toBe('client');
-    expect(consoleError).toHaveBeenCalled();
+    expect(root.textContent).toBe('Count: 0');
+    expect(events).toMatchObject([
+      { phase: 'resolve', outcome: 'success' },
+      { phase: 'hydrate', outcome: 'success' },
+    ]);
   });
 
   it('renders the configured client fallback when the browser import times out', async () => {
@@ -198,6 +232,7 @@ describe('hydrateReactRemotes', () => {
     for await (const chunk of serverStream) serverChunks.push(Buffer.from(chunk));
     setStreamedMarkup(Buffer.concat(serverChunks).toString());
     const root = document.querySelector<HTMLElement>('#client-import-timeout-root')!;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await act(async () => {
       await hydrateReactRemotes(document);

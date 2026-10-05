@@ -1,5 +1,7 @@
 import { pathToFileURL } from 'node:url';
 
+import { reportDiagnostic } from '@mfe-ssr/core';
+import type { DiagnosticEvent, DiagnosticHandler } from '@mfe-ssr/core';
 import type { RemoteManifest } from '@mfe-ssr/core';
 import type { LoadHook, ResolveHook } from 'node:module';
 
@@ -10,13 +12,36 @@ import type { NodeLoaderData } from './types';
 let resolveRemote: ReturnType<typeof createNodeResolver> | undefined;
 let fetcher: RemoteModuleFetcher | undefined;
 let integrityByServerUrl: ReadonlyMap<string, string> = new Map();
+let onDiagnostic: DiagnosticHandler | undefined;
 
 export function initialize(data: NodeLoaderData): void {
   const options = data.options ?? {};
   const baseUrl = options.baseUrl ?? pathToFileURL(`${process.cwd()}/`).href;
-  const nextResolver = createNodeResolver(data.manifest, { ...options, baseUrl });
+  const diagnosticHandler =
+    options.onDiagnostic ??
+    (data.diagnosticPort
+      ? (event: DiagnosticEvent) => {
+          try {
+            data.diagnosticPort?.postMessage(event);
+          } catch {
+            // A closed diagnostics channel must not break module loading.
+          }
+        }
+      : undefined);
+  data.diagnosticPort?.unref();
+  onDiagnostic = diagnosticHandler;
+  const nextResolver = createNodeResolver(data.manifest, {
+    ...options,
+    baseUrl,
+    onDiagnostic: (event) => {
+      if (event.outcome !== 'unmatched') {
+        const { timestamp: _timestamp, ...input } = event;
+        reportDiagnostic(diagnosticHandler, input);
+      }
+    },
+  });
   const nextIntegrityByServerUrl = createServerIntegrityMap(data.manifest, baseUrl);
-  const nextFetcher = new RemoteModuleFetcher(options);
+  const nextFetcher = new RemoteModuleFetcher({ ...options, onDiagnostic: diagnosticHandler });
 
   resolveRemote = nextResolver;
   integrityByServerUrl = nextIntegrityByServerUrl;
@@ -24,6 +49,7 @@ export function initialize(data: NodeLoaderData): void {
 }
 
 export const resolve: ResolveHook = async (specifier, context, nextResolve) => {
+  const startedAt = Date.now();
   const mappedUrl = resolveRemote?.(specifier, context.parentURL);
   if (mappedUrl) {
     return {
@@ -33,13 +59,34 @@ export const resolve: ResolveHook = async (specifier, context, nextResolve) => {
   }
 
   if (context.parentURL && isRemoteUrl(context.parentURL) && isRelativeSpecifier(specifier)) {
+    reportDiagnostic(onDiagnostic, {
+      phase: 'resolve',
+      outcome: 'success',
+      durationMs: Date.now() - startedAt,
+    });
     return {
       url: new URL(specifier, context.parentURL).href,
       shortCircuit: true,
     };
   }
 
-  return nextResolve(specifier, context);
+  try {
+    const result = await nextResolve(specifier, context);
+    reportDiagnostic(onDiagnostic, {
+      phase: 'resolve',
+      outcome: 'unmatched',
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
+  } catch (error) {
+    reportDiagnostic(onDiagnostic, {
+      phase: 'resolve',
+      outcome: 'failure',
+      durationMs: Date.now() - startedAt,
+      errorCode: getErrorCode(error, 'RESOLUTION_FAILED'),
+    });
+    throw error;
+  }
 };
 
 export const load: LoadHook = async (url, context, nextLoad) => {
@@ -95,4 +142,13 @@ function isRemoteUrl(value: string): boolean {
 
 function isRelativeSpecifier(value: string): boolean {
   return value.startsWith('./') || value.startsWith('../') || value.startsWith('/');
+}
+
+function getErrorCode(error: unknown, fallback: string): string {
+  if (error instanceof RemoteModuleError) return error.code;
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+  }
+  return fallback;
 }

@@ -1,5 +1,43 @@
 export type ResolverTarget = 'client' | 'server';
 
+export type DiagnosticPhase = 'resolve' | 'fetch' | 'render' | 'hydrate' | 'health-check';
+
+export type DiagnosticOutcome = 'success' | 'failure' | 'unmatched';
+
+export interface DiagnosticEvent {
+  readonly phase: DiagnosticPhase;
+  readonly outcome: DiagnosticOutcome;
+  readonly timestamp: string;
+  readonly durationMs: number;
+  readonly remoteId?: string;
+  readonly statusCode?: number;
+  readonly errorCode?: string;
+}
+
+export type DiagnosticHandler = (event: DiagnosticEvent) => unknown;
+
+export type DiagnosticEventInput = Omit<DiagnosticEvent, 'timestamp'>;
+
+export function reportDiagnostic(
+  handler: DiagnosticHandler | undefined,
+  event: DiagnosticEventInput,
+): void {
+  if (!handler) return;
+
+  try {
+    const result = handler(
+      Object.freeze({
+        ...event,
+        timestamp: new Date().toISOString(),
+        durationMs: Math.max(0, event.durationMs),
+      }),
+    );
+    void Promise.resolve(result).catch(() => {});
+  } catch {
+    // Diagnostics must never change the behavior of the host or a remote.
+  }
+}
+
 export type ManifestErrorCode =
   | 'INVALID_MANIFEST'
   | 'INVALID_SPECIFIER'
@@ -31,6 +69,7 @@ export interface ImportMap {
 
 export interface ManifestResolverOptions {
   baseUrl?: string;
+  onDiagnostic?: DiagnosticHandler;
 }
 
 export interface ImportMapResolver {
@@ -133,20 +172,38 @@ export function createManifestResolver(
 
   return {
     resolve(specifier, parentUrl) {
-      if (typeof specifier !== 'string' || specifier.length === 0) {
-        throw new ManifestError(
-          'INVALID_SPECIFIER',
-          'Specifier must be a non-empty string.',
-          'specifier',
-        );
+      const startedAt = Date.now();
+
+      try {
+        if (typeof specifier !== 'string' || specifier.length === 0) {
+          throw new ManifestError(
+            'INVALID_SPECIFIER',
+            'Specifier must be a non-empty string.',
+            'specifier',
+          );
+        }
+
+        const scopedMappings = findScopedMappings(scopes, parentUrl, baseUrl);
+        const match =
+          (scopedMappings && resolveMapping(scopedMappings, specifier, target, baseUrl)) ??
+          resolveMapping(manifest.imports, specifier, target, baseUrl);
+
+        reportDiagnostic(options.onDiagnostic, {
+          phase: 'resolve',
+          outcome: match ? 'success' : 'unmatched',
+          durationMs: Date.now() - startedAt,
+          ...(match ? { remoteId: match.entry.id } : {}),
+        });
+        return match?.url;
+      } catch (error) {
+        reportDiagnostic(options.onDiagnostic, {
+          phase: 'resolve',
+          outcome: 'failure',
+          durationMs: Date.now() - startedAt,
+          errorCode: getDiagnosticErrorCode(error, 'RESOLUTION_FAILED'),
+        });
+        throw error;
       }
-
-      const scopedMappings = findScopedMappings(scopes, parentUrl, baseUrl);
-      const scopedMatch = scopedMappings
-        ? resolveMapping(scopedMappings, specifier, target, baseUrl)
-        : undefined;
-
-      return scopedMatch ?? resolveMapping(manifest.imports, specifier, target, baseUrl);
     },
   };
 }
@@ -439,10 +496,10 @@ function resolveMapping(
   specifier: string,
   target: ResolverTarget,
   baseUrl: string,
-): string | undefined {
+): { url: string; entry: RemoteManifestEntry } | undefined {
   const exactEntry = mappings[specifier];
   if (exactEntry) {
-    return resolveAddress(exactEntry[target], baseUrl);
+    return { url: resolveAddress(exactEntry[target], baseUrl), entry: exactEntry };
   }
 
   const prefix = Object.keys(mappings)
@@ -455,7 +512,12 @@ function resolveMapping(
 
   const entry = mappings[prefix];
   const address = resolveAddress(entry[target], baseUrl);
-  return new URL(specifier.slice(prefix.length), address).href;
+  return { url: new URL(specifier.slice(prefix.length), address).href, entry };
+}
+
+function getDiagnosticErrorCode(error: unknown, fallback: string): string {
+  if (error instanceof ManifestError) return error.code;
+  return fallback;
 }
 
 function resolveAddress(address: string, baseUrl: string): string {

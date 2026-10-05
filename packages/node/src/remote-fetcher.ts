@@ -1,5 +1,8 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 
+import { reportDiagnostic } from '@mfe-ssr/core';
+import type { DiagnosticHandler } from '@mfe-ssr/core';
+
 import { RemoteModuleCache } from './remote-cache';
 import type { RemoteModuleCacheOptions } from './remote-cache';
 
@@ -27,6 +30,7 @@ export interface RemoteModuleFetcherOptions {
   maxResponseBytes?: number;
   cache?: RemoteModuleCacheOptions;
   fetch?: typeof globalThis.fetch;
+  onDiagnostic?: DiagnosticHandler;
 }
 
 export class RemoteModuleError extends Error {
@@ -66,6 +70,7 @@ export class RemoteModuleFetcher {
   private readonly timeoutMs: number;
   private readonly maxResponseBytes: number;
   private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly onDiagnostic?: DiagnosticHandler;
   private readonly cache: RemoteModuleCache;
   private readonly inFlight = new Map<string, InFlightRequest>();
   private readonly generationsByUrl = new Map<string, number>();
@@ -80,6 +85,7 @@ export class RemoteModuleFetcher {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
     this.fetchImpl = options.fetch ?? globalThis.fetch;
+    this.onDiagnostic = options.onDiagnostic;
     this.cache = new RemoteModuleCache(options.cache);
 
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) {
@@ -101,6 +107,30 @@ export class RemoteModuleFetcher {
   }
 
   async fetch(url: string, integrity?: string): Promise<string> {
+    const startedAt = Date.now();
+    try {
+      const source = await this.fetchWithCache(url, integrity);
+      reportDiagnostic(this.onDiagnostic, {
+        phase: 'fetch',
+        outcome: 'success',
+        durationMs: Date.now() - startedAt,
+      });
+      return source;
+    } catch (error) {
+      reportDiagnostic(this.onDiagnostic, {
+        phase: 'fetch',
+        outcome: 'failure',
+        durationMs: Date.now() - startedAt,
+        errorCode: error instanceof RemoteModuleError ? error.code : 'REMOTE_FETCH_FAILED',
+        ...(error instanceof RemoteModuleError && error.status !== undefined
+          ? { statusCode: error.status }
+          : {}),
+      });
+      throw error;
+    }
+  }
+
+  private async fetchWithCache(url: string, integrity?: string): Promise<string> {
     const normalizedUrl = this.assertAllowedUrl(url);
     const integrityDigests = integrity === undefined ? undefined : parseIntegrity(integrity, url);
     const cacheKey = JSON.stringify([normalizedUrl, integrity ?? null]);

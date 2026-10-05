@@ -105,6 +105,7 @@ import * as core from '@mfe-ssr/core';
 import * as importMap from '@mfe-ssr/import-map';
 import * as nodeRuntime from '@mfe-ssr/node';
 import * as reactRuntime from '@mfe-ssr/react';
+import * as reactClient from '@mfe-ssr/react/client';
 import * as reactServer from '@mfe-ssr/react/server';
 
 const manifest = {
@@ -120,12 +121,15 @@ const manifest = {
 
 assert.equal(typeof core.createManifestResolver, 'function');
 assert.equal(typeof nodeRuntime.registerNodeLoader, 'function');
+assert.equal(typeof nodeRuntime.checkRemoteHealth, 'function');
 assert.equal(typeof importMap.createBrowserImportMap, 'function');
 assert.equal(typeof importMap.serializeImportMap, 'function');
 assert.equal(typeof importMap.createModulePreloadLinks, 'function');
 assert.equal(reactRuntime.renderReactRemote, reactServer.renderReactRemote);
 assert.equal(typeof reactServer.renderReactRemoteToStream, 'function');
 assert.equal(typeof reactServer.renderReactRemoteBySpecifierToStream, 'function');
+assert.equal(typeof reactClient.hydrateReactRemotes, 'function');
+assert.equal(typeof reactClient.setReactDiagnosticHandler, 'function');
 
 const browserMap = importMap.createBrowserImportMap(manifest);
 assert.equal(browserMap.imports['@mfe/consumer'], manifest.imports['@mfe/consumer'].client);
@@ -141,14 +145,17 @@ const resolveRemote = nodeRuntime.createNodeResolver(manifest, {
 });
 assert.equal(resolveRemote('@mfe/consumer'), 'file:///consumer/remotes/consumer/server.mjs');
 
+const diagnosticEvents = [];
 const markup = reactServer.renderReactRemote({
   specifier: '@mfe/consumer',
   remote: { default: ({ name }) => React.createElement('p', null, name) },
   props: { name: 'Packed consumer' },
   rootId: 'packed-consumer-root',
+  onDiagnostic: (event) => diagnosticEvents.push(event),
 });
 assert.match(markup, /Packed consumer/);
 assert.match(markup, /data-mfe-react-hydration="packed-consumer-root"/);
+assert.deepEqual(diagnosticEvents.map((event) => [event.phase, event.outcome]), [['render', 'success']]);
 
 const streamedChunks = [];
 for await (const chunk of reactServer.renderReactRemoteToStream({

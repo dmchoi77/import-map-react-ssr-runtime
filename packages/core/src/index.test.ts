@@ -251,4 +251,60 @@ describe('createManifestResolver', () => {
       'https://cdn.example.com/cart/client.js',
     );
   });
+
+  it('reports resolution outcomes without including the specifier or resolved URL', () => {
+    const events: unknown[] = [];
+    const resolver = createManifestResolver(manifest, 'server', {
+      onDiagnostic: (event) => events.push(event),
+    });
+
+    expect(resolver.resolve('@mfe/cart')).toBe('file:///srv/cart/server.js');
+    expect(resolver.resolve('@mfe/missing?token=private')).toBeUndefined();
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      phase: 'resolve',
+      outcome: 'success',
+      remoteId: '@mfe/cart',
+      durationMs: expect.any(Number),
+      timestamp: expect.any(String),
+    });
+    expect(events[1]).toMatchObject({ phase: 'resolve', outcome: 'unmatched' });
+    expect(JSON.stringify(events)).not.toContain('token=private');
+    expect(JSON.stringify(events)).not.toContain('file:///srv/cart/server.js');
+  });
+
+  it('reports a stable error code for invalid resolution without exposing the input', () => {
+    const events: unknown[] = [];
+    const resolver = createManifestResolver(manifest, 'server', {
+      onDiagnostic: (event) => events.push(event),
+    });
+
+    expect(() => resolver.resolve('')).toThrowError(ManifestError);
+    expect(events).toMatchObject([
+      { phase: 'resolve', outcome: 'failure', errorCode: 'INVALID_SPECIFIER' },
+    ]);
+  });
+
+  it('does not let a diagnostic callback change resolver behavior', () => {
+    const resolver = createManifestResolver(manifest, 'server', {
+      onDiagnostic() {
+        throw new Error('diagnostic sink failed');
+      },
+    });
+
+    expect(resolver.resolve('@mfe/cart')).toBe('file:///srv/cart/server.js');
+    expect(() => resolver.resolve('')).toThrowError(ManifestError);
+  });
+
+  it('ignores rejected promises from asynchronous diagnostic callbacks', async () => {
+    const resolver = createManifestResolver(manifest, 'server', {
+      onDiagnostic: async () => {
+        throw new Error('diagnostic sink failed asynchronously');
+      },
+    });
+
+    expect(resolver.resolve('@mfe/cart')).toBe('file:///srv/cart/server.js');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  });
 });

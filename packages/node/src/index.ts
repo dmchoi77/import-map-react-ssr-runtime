@@ -9,6 +9,13 @@ export {
   type RemoteModuleCacheOptions,
   type RemoteModuleFetcherOptions,
 } from './remote-fetcher';
+export { checkRemoteHealth } from './health';
+export type {
+  RemoteHealthCheckOptions,
+  RemoteHealthErrorCode,
+  RemoteHealthResult,
+  RemoteHealthStatus,
+} from './health';
 
 export type { NodeLoaderData, NodeLoaderOptions } from './types';
 export { registerNodeLoader } from './preload';

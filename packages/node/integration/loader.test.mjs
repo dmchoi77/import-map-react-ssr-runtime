@@ -80,6 +80,21 @@ test('reuses the persistent remote cache after restarting the Node process', asy
   assert.equal(requestedPaths.get('/persistent.mjs'), 1);
 });
 
+test('forwards opt-in structured diagnostics from the loader worker thread', async () => {
+  requestedPaths.clear();
+  const report = await importRemote(`${allowedOrigin}${modulePath}`, {}, {}, undefined, true);
+
+  assert.equal(report.ok, true);
+  assert.ok(
+    report.diagnostics.some((event) => event.phase === 'resolve' && event.outcome === 'success'),
+  );
+  assert.ok(
+    report.diagnostics.some((event) => event.phase === 'fetch' && event.outcome === 'success'),
+  );
+  assert.ok(report.diagnostics.every((event) => typeof event.durationMs === 'number'));
+  assert.ok(report.diagnostics.every((event) => !('url' in event) && !('specifier' in event)));
+});
+
 test('rejects a tampered relative dependency before evaluating its source', async () => {
   const report = await importRemote(
     `${allowedOrigin}/entry-with-tampered-dependency.mjs`,
@@ -172,7 +187,13 @@ function handleAllowedRequest(request, response) {
   response.end();
 }
 
-async function importRemote(serverUrl, overrides = {}, additionalEntries = {}, rootIntegrity) {
+async function importRemote(
+  serverUrl,
+  overrides = {},
+  additionalEntries = {},
+  rootIntegrity,
+  captureDiagnostics = false,
+) {
   const preloadUrl = new URL('../dist/index.mjs', import.meta.url).href;
   const preloadPath = join(testDirectory, `preload-${preloadIndex++}.mjs`);
   const manifest = {
@@ -193,17 +214,23 @@ async function importRemote(serverUrl, overrides = {}, additionalEntries = {}, r
     maxResponseBytes: 4_096,
     ...overrides,
   };
+  const preloadDiagnostics = captureDiagnostics ? 'globalThis.__mfeDiagnostics = [];\n' : '';
+  const serializedOptions = captureDiagnostics
+    ? `{ ...${JSON.stringify(options)}, onDiagnostic: (event) => globalThis.__mfeDiagnostics.push(event) }`
+    : JSON.stringify(options);
 
   await writeFile(
     preloadPath,
     `import { registerNodeLoader } from ${JSON.stringify(preloadUrl)};\n` +
-      `registerNodeLoader(${JSON.stringify(manifest)}, ${JSON.stringify(options)});\n`,
+      preloadDiagnostics +
+      `registerNodeLoader(${JSON.stringify(manifest)}, ${serializedOptions});\n`,
   );
 
   const source = `
     try {
       const remote = await import(${JSON.stringify(remoteSpecifier)});
-      console.log(JSON.stringify({ ok: true, answer: remote.default, dependency: remote.dependency }));
+      await new Promise((resolve) => setImmediate(resolve));
+      console.log(JSON.stringify({ ok: true, answer: remote.default, dependency: remote.dependency${captureDiagnostics ? ', diagnostics: globalThis.__mfeDiagnostics' : ''} }));
     } catch (error) {
       console.log(JSON.stringify({ ok: false, name: error.name, code: error.code, message: error.message, integrityExecuted: globalThis.__mfeIntegrityExecuted === true }));
     }
