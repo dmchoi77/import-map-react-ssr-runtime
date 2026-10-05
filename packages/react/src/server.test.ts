@@ -60,6 +60,57 @@ describe('renderReactRemote', () => {
     expect(markup).toContain('"identifierPrefix":"greeting-"');
   });
 
+  it('keeps concurrent render roots and hydration contracts isolated', async () => {
+    interface RequestProps {
+      requestId: string;
+      value: number;
+    }
+
+    const requestRemote: ReactRemoteModule<RequestProps> = {
+      default: ({ requestId, value }) =>
+        createElement('output', { 'data-request-id': requestId }, `${requestId}:${value}`),
+    };
+    const requests = Array.from({ length: 24 }, (_, index) => ({
+      requestId: `request-${index}`,
+      value: index,
+    }));
+
+    const rendered = await Promise.all(
+      requests.map(async (props) => {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        return renderReactRemote({
+          specifier: '@mfe/concurrent',
+          remote: requestRemote,
+          props,
+        });
+      }),
+    );
+
+    const rootIds = rendered.map((markup) => {
+      const match = markup.match(/<div id="([^"]+)" data-mfe-react-root=/);
+      expect(match).not.toBeNull();
+      return match![1];
+    });
+    expect(new Set(rootIds).size).toBe(requests.length);
+
+    rendered.forEach((markup, index) => {
+      const rootId = rootIds[index];
+      const contractMatch = markup.match(
+        /<script type="application\/json" data-mfe-react-hydration="([^"]+)">(.*?)<\/script>/,
+      );
+      expect(contractMatch).not.toBeNull();
+      expect(contractMatch![1]).toBe(rootId);
+      expect(markup).toContain(`data-request-id="${requests[index].requestId}"`);
+
+      const contract = JSON.parse(contractMatch![2]);
+      expect(contract).toEqual({
+        specifier: '@mfe/concurrent',
+        props: requests[index],
+        identifierPrefix: `${rootId}-`,
+      });
+    });
+  });
+
   it('escapes the serialized props inside the hydration script', () => {
     const markup = renderReactRemote({
       specifier: '@mfe/greeting',
