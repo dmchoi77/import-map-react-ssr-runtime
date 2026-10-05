@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+import { Badge } from '@mfe/basic/badge';
+
 export interface CounterProps {
   initial?: number;
 }
@@ -13,6 +15,7 @@ export function Counter({ initial = 0 }: CounterProps) {
       <button id="counter-increment" type="button" onClick={() => setCount((value) => value + 1)}>
         Count: {count}
       </button>
+      <Badge />
     </section>
   );
 }

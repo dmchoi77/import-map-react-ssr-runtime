@@ -7,7 +7,7 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: 'src/app.server.tsx',
-      external: ['react', 'react-dom/server', 'react/jsx-runtime'],
+      external: ['@mfe/basic/counter', 'react', 'react-dom/server', 'react/jsx-runtime'],
       output: {
         entryFileNames: '[name].mjs',
       },

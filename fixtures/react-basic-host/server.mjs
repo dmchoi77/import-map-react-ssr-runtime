@@ -11,18 +11,19 @@ import {
   createModulePreloadLinks,
   serializeImportMap,
 } from '@mfe-ssr/import-map';
-import { renderReactRemoteBySpecifier } from '@mfe-ssr/react/server';
-
 import { createClientManifest } from '../react-basic-remote/manifest.mjs';
 
 const REMOTE_SPECIFIER = '@mfe/basic/counter';
-const DEFAULT_BOOTSTRAP_PATH = '/runtime/react/bootstrap.mjs';
+const REMOTE_SPECIFIERS = [REMOTE_SPECIFIER, '@mfe/basic/badge'];
+const DEFAULT_CLIENT_PATH = '/app/app.client.mjs';
+const DEFAULT_REMOTE_CLIENT_PATH = '/remote/counter.client.mjs';
+const DEFAULT_REMOTE_BADGE_CLIENT_PATH = '/remote/badge.client.mjs';
+const DEFAULT_HOST_APP_MODULE = './dist/server/app.server.mjs';
 
 export function createBasicMiddleware({
-  loadHostApp = () => import('./dist/server/app.server.mjs'),
-  loadRemote = (specifier) => import(specifier),
-  bootstrapPath = DEFAULT_BOOTSTRAP_PATH,
-  clientPath,
+  loadHostApp = () => import(/* @vite-ignore */ DEFAULT_HOST_APP_MODULE),
+  clientPath = DEFAULT_CLIENT_PATH,
+  remoteClientPaths = [DEFAULT_REMOTE_CLIENT_PATH, DEFAULT_REMOTE_BADGE_CLIENT_PATH],
   runtimeFiles = new Map(),
 } = {}) {
   return async (request, response, next) => {
@@ -42,21 +43,15 @@ export function createBasicMiddleware({
       }
 
       const { HostApp } = await loadHostApp();
-      const remoteMarkup = await renderReactRemoteBySpecifier({
-        specifier: REMOTE_SPECIFIER,
-        props: { initial: 0 },
-        rootId: 'counter-root',
-        loadRemote,
-      });
-      const body = `${renderToString(createElement(HostApp))}${remoteMarkup}`;
+      const body = renderToString(createElement(HostApp));
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(
         renderDocument({
           origin: requestUrl.origin,
           documentUrl: requestUrl.href,
           body,
-          bootstrapPath,
           clientPath,
+          remoteClientPaths,
         }),
       );
     } catch (error) {
@@ -95,8 +90,8 @@ async function createRuntimeFiles() {
   const runtimeFiles = new Map();
   await addDirectoryFiles(
     runtimeFiles,
-    new URL('../../packages/react/dist/', import.meta.url),
-    '/runtime/react',
+    new URL('../react-basic-host/dist/client/', import.meta.url),
+    '/app',
   );
   await addDirectoryFiles(
     runtimeFiles,
@@ -114,16 +109,22 @@ async function addDirectoryFiles(runtimeFiles, directoryUrl, urlPrefix) {
   }
 }
 
-function renderDocument({ origin, documentUrl, body, bootstrapPath, clientPath }) {
+function renderDocument({ origin, documentUrl, body, clientPath, remoteClientPaths }) {
   const clientEntry = typeof clientPath === 'function' ? clientPath() : clientPath;
-  const manifest = createClientManifest(origin, clientEntry);
+  const remoteEntries =
+    typeof remoteClientPaths === 'function' ? remoteClientPaths() : remoteClientPaths;
+  const manifest = createClientManifest(
+    origin,
+    new URL(remoteEntries[0], origin).href,
+    new URL(remoteEntries[1], origin).href,
+  );
   const importMap = createBrowserImportMap(manifest);
   importMap.imports.react = 'https://esm.sh/react@19.3.0';
   importMap.imports['react/jsx-runtime'] = 'https://esm.sh/react@19.3.0/jsx-runtime';
   importMap.imports['react-dom/client'] = 'https://esm.sh/react-dom@19.3.0/client?external=react';
-  const preloadLinks = createModulePreloadLinks(manifest, [REMOTE_SPECIFIER], {
+  const preloadLinks = createModulePreloadLinks(manifest, REMOTE_SPECIFIERS, {
     documentUrl,
-    parentUrl: new URL(bootstrapPath, documentUrl).href,
+    parentUrl: new URL(clientEntry, documentUrl).href,
   });
 
   return `<!doctype html>
@@ -135,8 +136,8 @@ function renderDocument({ origin, documentUrl, body, bootstrapPath, clientPath }
     ${preloadLinks}
   </head>
   <body>
-    <main>${body}</main>
-    <script type="module" src="${bootstrapPath}"></script>
+    <main><div id="app-root">${body}</div></main>
+    <script type="module" src="${clientEntry}"></script>
   </body>
 </html>`;
 }

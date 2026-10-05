@@ -6,10 +6,13 @@ export default defineConfig({
     outDir: 'dist/server',
     emptyOutDir: true,
     rollupOptions: {
-      input: 'src/counter.server.tsx',
-      external: ['react', 'react/jsx-runtime'],
+      input: {
+        counter: 'src/counter.server.tsx',
+        badge: 'src/badge.server.tsx',
+      },
+      external: ['@mfe/basic/badge', 'react', 'react/jsx-runtime'],
       output: {
-        entryFileNames: 'counter.server.mjs',
+        entryFileNames: '[name].server.mjs',
         chunkFileNames: 'assets/[name]-[hash].mjs',
       },
     },

@@ -9,8 +9,11 @@ const workspaceRoot = fileURLToPath(new URL('../..', import.meta.url));
 const remoteOrigin =
   process.env.REMOTE_ORIGIN ??
   `http://${process.env.REMOTE_HOST ?? '127.0.0.1'}:${process.env.REMOTE_PORT ?? 5174}`;
-const remoteEntry = fileURLToPath(
+const remoteCounterEntry = fileURLToPath(
   new URL('../react-basic-remote/src/counter.server.tsx', import.meta.url),
+);
+const remoteBadgeEntry = fileURLToPath(
+  new URL('../react-basic-remote/src/badge.server.tsx', import.meta.url),
 );
 
 export default defineConfig({
@@ -21,20 +24,25 @@ export default defineConfig({
       name: 'basic-react-fixture-host',
       enforce: 'pre',
       resolveId(source, _importer, options) {
-        if (options?.ssr && source === '@mfe/basic/counter') return remoteEntry;
+        if (options?.ssr && source === '@mfe/basic/counter') return remoteCounterEntry;
+        if (options?.ssr && source === '@mfe/basic/badge') return remoteBadgeEntry;
+        if (!options?.ssr && source === '@mfe/basic/counter') {
+          return { id: `${remoteOrigin}/src/counter.client.tsx`, external: true };
+        }
+        if (!options?.ssr && source === '@mfe/basic/badge') {
+          return { id: `${remoteOrigin}/src/badge.client.tsx`, external: true };
+        }
       },
       configureServer(server) {
         server.middlewares.use(
           createBasicMiddleware({
             loadHostApp: () =>
               server.ssrLoadModule('/fixtures/react-basic-host/src/app.server.tsx'),
-            loadRemote: (specifier) => {
-              if (specifier !== '@mfe/basic/counter')
-                throw new Error(`Unknown remote: ${specifier}`);
-              return server.ssrLoadModule('/fixtures/react-basic-remote/src/counter.server.tsx');
-            },
-            bootstrapPath: '/packages/react/dist/bootstrap.mjs',
-            clientPath: () => new URL('/src/counter.client.tsx', remoteOrigin).href,
+            clientPath: '/fixtures/react-basic-host/src/app.client.tsx',
+            remoteClientPaths: () => [
+              new URL('/src/counter.client.tsx', remoteOrigin).href,
+              new URL('/src/badge.client.tsx', remoteOrigin).href,
+            ],
           }),
         );
       },

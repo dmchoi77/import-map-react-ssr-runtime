@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 
+import { createElement } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createBasicMiddleware } from './server.mjs';
@@ -18,15 +19,15 @@ afterEach(async () => {
 });
 
 describe('basic React fixture host', () => {
-  it('renders one remote with a hydration contract and import map', async () => {
+  it('renders the host root with an import map and client entry', async () => {
     server = createServer();
     server.on(
       'request',
       createBasicMiddleware({
-        loadHostApp: async () => ({ HostApp: () => null }),
-        loadRemote: async () => ({
-          default: () => 'Counter remote',
+        loadHostApp: async () => ({
+          HostApp: () => createElement('p', null, 'Nested counter remote'),
         }),
+        clientPath: '/app/app.client.mjs',
       }),
     );
 
@@ -40,10 +41,12 @@ describe('basic React fixture host', () => {
     const html = await response.text();
 
     expect(response.status).toBe(200);
-    expect(html).toContain('Counter remote');
+    expect(html).toContain('Nested counter remote');
     expect(html).toContain('<script type="importmap">');
-    expect(html).toContain('data-mfe-react-root="counter-root"');
-    expect(html).toContain('data-mfe-react-hydration="counter-root"');
-    expect(html).toContain('/runtime/react/bootstrap.mjs');
+    expect(html).toContain('/remote/counter.client.mjs');
+    expect(html).toContain('/remote/badge.client.mjs');
+    expect(html).toContain('<div id="app-root"><p>Nested counter remote</p></div>');
+    expect(html).toContain('<script type="module" src="/app/app.client.mjs"></script>');
+    expect(html).not.toContain('data-mfe-react-root');
   });
 });

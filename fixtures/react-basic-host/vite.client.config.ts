@@ -8,14 +8,10 @@ export default defineConfig({
     outDir: 'dist/client',
     emptyOutDir: true,
     rollupOptions: {
-      input: {
-        counter: 'src/counter.client.tsx',
-        badge: 'src/badge.client.tsx',
-      },
-      preserveEntrySignatures: 'strict',
-      external: ['@mfe/basic/badge', 'react', 'react/jsx-runtime'],
+      input: 'src/app.client.tsx',
+      external: ['@mfe/basic/counter', 'react', 'react-dom/client', 'react/jsx-runtime'],
       output: {
-        entryFileNames: '[name].client.mjs',
+        entryFileNames: 'app.client.mjs',
         chunkFileNames: 'assets/[name]-[hash].mjs',
       },
     },
