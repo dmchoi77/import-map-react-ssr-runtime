@@ -9,7 +9,7 @@
     "format:check": "oxfmt --check",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/browser build"
+    "build": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/browser build && pnpm --filter @mfe-ssr/node build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

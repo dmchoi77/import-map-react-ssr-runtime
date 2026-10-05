@@ -1,0 +1,32 @@
+{
+  "name": "@mfe-ssr/node",
+  "version": "0.0.0",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./loader": {
+      "types": "./dist/loader.d.mts",
+      "import": "./dist/loader.mjs"
+    },
+    "./preload": {
+      "types": "./dist/preload.d.mts",
+      "import": "./dist/preload.mjs"
+    }
+  },
+  "scripts": {
+    "build": "tsdown"
+  },
+  "dependencies": {
+    "@mfe-ssr/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=20.6.0"
+  }
+}
