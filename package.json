@@ -8,6 +8,8 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "test": "vitest run",
+    "test:react18": "vitest run --config vitest.react18.config.ts packages/react/src/server.test.ts packages/react/src/client.test.ts",
+    "test:react-matrix": "pnpm test && pnpm test:react18",
     "test:watch": "vitest",
     "test:loader-integration": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/node build && node --test packages/node/integration/loader.test.mjs",
     "test:e2e": "pnpm build && playwright test",

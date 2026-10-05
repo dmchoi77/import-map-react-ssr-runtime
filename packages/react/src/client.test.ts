@@ -8,7 +8,12 @@ import { pathToFileURL } from 'node:url';
 import { hydrateReactRemotes } from './client';
 
 const COUNTER_REMOTE_SPECIFIER = pathToFileURL(
-  resolve(process.cwd(), 'packages/react/src/fixtures/counter-remote.mjs'),
+  resolve(
+    process.cwd(),
+    process.env.MFE_REACT_18_FIXTURE === '1'
+      ? 'fixtures/react18-compat/counter-remote.mjs'
+      : 'packages/react/src/fixtures/counter-remote.mjs',
+  ),
 ).href;
 const MISSING_REMOTE_SPECIFIER = pathToFileURL(
   resolve(process.cwd(), 'packages/react/src/fixtures/missing-remote.mjs'),
