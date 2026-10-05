@@ -14,12 +14,6 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.5
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.3.0
-      '@types/react-dom':
-        specifier: ^19.0.0
-        version: 19.3.0(@types/react@19.3.0)
       happy-dom:
         specifier: ^16.8.0
         version: 16.8.1
@@ -29,12 +23,6 @@ importers:
       oxlint:
         specifier: ^1.86.0
         version: 1.86.0
-      react:
-        specifier: ^19.0.0
-        version: 19.3.0
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.3.0(react@19.3.0)
       tsdown:
         specifier: ^0.23.0
         version: 0.23.0(typescript@5.9.3)
@@ -50,9 +38,6 @@ importers:
       '@mfe-ssr/import-map':
         specifier: workspace:*
         version: link:../../packages/import-map
-      '@mfe-ssr/react':
-        specifier: workspace:*
-        version: link:../../packages/react
       react:
         specifier: ^19.0.0
         version: 19.3.0
@@ -89,59 +74,6 @@ importers:
         specifier: ^7.3.6
         version: 7.3.6(@types/node@22.20.5)
 
-  fixtures/react-host:
-    dependencies:
-      '@mfe-ssr/import-map':
-        specifier: workspace:*
-        version: link:../../packages/import-map
-      '@mfe-ssr/react':
-        specifier: workspace:*
-        version: link:../../packages/react
-      react:
-        specifier: ^19.0.0
-        version: 19.3.0
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.3.0(react@19.3.0)
-    devDependencies:
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.3.0
-      '@types/react-dom':
-        specifier: ^19.0.0
-        version: 19.3.0(@types/react@19.3.0)
-      typescript:
-        specifier: ^5.8.0
-        version: 5.9.3
-      vite:
-        specifier: ^7.3.6
-        version: 7.3.6(@types/node@22.20.5)
-
-  fixtures/react-remote:
-    dependencies:
-      react:
-        specifier: ^19.0.0
-        version: 19.3.0
-    devDependencies:
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.3.0
-      typescript:
-        specifier: ^5.8.0
-        version: 5.9.3
-      vite:
-        specifier: ^7.3.6
-        version: 7.3.6(@types/node@22.20.5)
-
-  fixtures/react18-compat:
-    dependencies:
-      react:
-        specifier: 18.3.1
-        version: 18.3.1
-      react-dom:
-        specifier: 18.3.1
-        version: 18.3.1(react@18.3.1)
-
   packages/core: {}
 
   packages/import-map:
@@ -155,18 +87,6 @@ importers:
       '@mfe-ssr/core':
         specifier: workspace:*
         version: link:../core
-
-  packages/react:
-    dependencies:
-      '@mfe-ssr/core':
-        specifier: workspace:*
-        version: link:../core
-      react:
-        specifier: ^18.2.0 || ^19.0.0
-        version: 19.3.0
-      react-dom:
-        specifier: ^18.2.0 || ^19.0.0
-        version: 19.3.0(react@19.3.0)
 
 packages:
 
@@ -1089,15 +1009,8 @@ packages:
     resolution: {integrity: sha512-vXoV9PjKHEednCUu01e98TkImxy67e3BJXbTIOmIq4Hyzw3IAwYRcuPkfeTzJzwyyts4kjuA73x+pWJLc4f86A==}
     engines: {node: ^22.18.0 || >=24.0.0}
 
-  js-tokens@4.0.0:
-    resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
-
   js-tokens@9.0.1:
     resolution: {integrity: sha512-mxa9E9ITFOt0ban3j6L5MpjwegGz6lBQmM1IJkWeBZGcMxto50+eWdjC/52xDbS2vy0k7vIMK0Fe2wfL9OQSpQ==}
-
-  loose-envify@1.4.0:
-    resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
-    hasBin: true
 
   loupe@3.2.1:
     resolution: {integrity: sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==}
@@ -1178,19 +1091,10 @@ packages:
   quansync@1.0.0:
     resolution: {integrity: sha512-5xZacEEufv3HSTPQuchrvV6soaiACMFnq1H8wkVioctoH3TRha9Sz66lOxRwPK/qZj7HPiSveih9yAyh98gvqA==}
 
-  react-dom@18.3.1:
-    resolution: {integrity: sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==}
-    peerDependencies:
-      react: ^18.3.1
-
   react-dom@19.3.0:
     resolution: {integrity: sha512-JDk8dgif51OjFoDE70+OT9ICyYr+69HlmihNwp1+Nsfbna3t5sIiCa9ZJktDmQ4/1b/rn26hIAR2uYXDMr5r0Q==}
     peerDependencies:
       react: ^19.3.0
-
-  react@18.3.1:
-    resolution: {integrity: sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==}
-    engines: {node: '>=0.10.0'}
 
   react@19.3.0:
     resolution: {integrity: sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog==}
@@ -1230,9 +1134,6 @@ packages:
     resolution: {integrity: sha512-gjA/kFeDfffII8COoPsvLPvE16hWDTEc1+0QKQNKUkuV8iJjqsC4xXs8/FzuL0v9EV39kuxTbAgcFoTRyy2TGQ==}
     engines: {node: '>=18.0.0', npm: '>=8.0.0'}
     hasBin: true
-
-  scheduler@0.23.2:
-    resolution: {integrity: sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==}
 
   scheduler@0.28.0:
     resolution: {integrity: sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw==}
@@ -1989,13 +1890,7 @@ snapshots:
 
   import-without-cache@0.4.1: {}
 
-  js-tokens@4.0.0: {}
-
   js-tokens@9.0.1: {}
-
-  loose-envify@1.4.0:
-    dependencies:
-      js-tokens: 4.0.0
 
   loupe@3.2.1: {}
 
@@ -2081,20 +1976,10 @@ snapshots:
 
   quansync@1.0.0: {}
 
-  react-dom@18.3.1(react@18.3.1):
-    dependencies:
-      loose-envify: 1.4.0
-      react: 18.3.1
-      scheduler: 0.23.2
-
   react-dom@19.3.0(react@19.3.0):
     dependencies:
       react: 19.3.0
       scheduler: 0.28.0
-
-  react@18.3.1:
-    dependencies:
-      loose-envify: 1.4.0
 
   react@19.3.0: {}
 
@@ -2166,10 +2051,6 @@ snapshots:
       '@rollup/rollup-win32-x64-gnu': 4.64.0
       '@rollup/rollup-win32-x64-msvc': 4.64.0
       fsevents: 2.3.3
-
-  scheduler@0.23.2:
-    dependencies:
-      loose-envify: 1.4.0
 
   scheduler@0.28.0: {}
 

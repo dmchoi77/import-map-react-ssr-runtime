@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +11,6 @@ const packageDirectories = [
   ['@mfe-ssr/core', 'packages/core'],
   ['@mfe-ssr/import-map', 'packages/import-map'],
   ['@mfe-ssr/node', 'packages/node'],
-  ['@mfe-ssr/react', 'packages/react'],
 ];
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'mfe-package-consumer-'));
 
@@ -33,19 +31,8 @@ try {
     tarballs.set(packageName, join(tarballDirectory, created[0]));
   }
 
-  const reactDomDirectory = await realpath(join(workspaceRoot, 'node_modules/react-dom'));
-  const reactTypesDirectory = await realpath(join(workspaceRoot, 'node_modules/@types/react'));
   const nodeTypesDirectory = await realpath(join(workspaceRoot, 'node_modules/@types/node'));
   const installedSupportPackages = [
-    ['react', await realpath(join(workspaceRoot, 'node_modules/react'))],
-    ['react-dom', reactDomDirectory],
-    [
-      'scheduler',
-      dirname(createRequire(join(reactDomDirectory, 'package.json')).resolve('scheduler')),
-    ],
-    ['@types/react', reactTypesDirectory],
-    ['@types/react-dom', await realpath(join(workspaceRoot, 'node_modules/@types/react-dom'))],
-    ['csstype', join(dirname(dirname(reactTypesDirectory)), 'csstype')],
     ['@types/node', nodeTypesDirectory],
     ['undici-types', join(dirname(dirname(nodeTypesDirectory)), 'undici-types')],
   ];
@@ -100,13 +87,9 @@ try {
     await writeFile(
       join(consumerDirectory, 'index.mjs'),
       `import assert from 'node:assert/strict';
-import React from 'react';
 import * as core from '@mfe-ssr/core';
 import * as importMap from '@mfe-ssr/import-map';
 import * as nodeRuntime from '@mfe-ssr/node';
-import * as reactRuntime from '@mfe-ssr/react';
-import * as reactClient from '@mfe-ssr/react/client';
-import * as reactServer from '@mfe-ssr/react/server';
 
 const manifest = {
   imports: {
@@ -125,12 +108,6 @@ assert.equal(typeof nodeRuntime.checkRemoteHealth, 'function');
 assert.equal(typeof importMap.createBrowserImportMap, 'function');
 assert.equal(typeof importMap.serializeImportMap, 'function');
 assert.equal(typeof importMap.createModulePreloadLinks, 'function');
-assert.equal(reactRuntime.renderReactRemote, reactServer.renderReactRemote);
-assert.equal(typeof reactServer.renderReactRemoteBySpecifier, 'function');
-assert.equal(typeof reactServer.renderReactRemoteToStream, 'function');
-assert.equal(typeof reactServer.renderReactRemoteBySpecifierToStream, 'function');
-assert.equal(typeof reactClient.hydrateReactRemotes, 'function');
-assert.equal(typeof reactClient.setReactDiagnosticHandler, 'function');
 
 const browserMap = importMap.createBrowserImportMap(manifest);
 assert.equal(browserMap.imports['@mfe/consumer'], manifest.imports['@mfe/consumer'].client);
@@ -145,55 +122,6 @@ const resolveRemote = nodeRuntime.createNodeResolver(manifest, {
   baseUrl: 'file:///consumer/',
 });
 assert.equal(resolveRemote('@mfe/consumer'), 'file:///consumer/remotes/consumer/server.mjs');
-
-const diagnosticEvents = [];
-const markup = reactServer.renderReactRemote({
-  specifier: '@mfe/consumer',
-  remote: { default: ({ name }) => React.createElement('p', null, name) },
-  props: { name: 'Packed consumer' },
-  rootId: 'packed-consumer-root',
-  onDiagnostic: (event) => diagnosticEvents.push(event),
-});
-assert.match(markup, /Packed consumer/);
-assert.match(markup, /data-mfe-react-hydration="packed-consumer-root"/);
-assert.deepEqual(diagnosticEvents.map((event) => [event.phase, event.outcome]), [['render', 'success']]);
-
-const streamedChunks = [];
-for await (const chunk of reactServer.renderReactRemoteToStream({
-  specifier: '@mfe/consumer',
-  remote: { default: ({ name }) => React.createElement('p', null, name) },
-  props: { name: 'Streamed consumer' },
-  rootId: 'packed-stream-root',
-})) {
-  streamedChunks.push(Buffer.from(chunk));
-}
-const streamedMarkup = Buffer.concat(streamedChunks).toString();
-assert.match(streamedMarkup, /Streamed consumer/);
-assert.match(streamedMarkup, /data-mfe-react-hydration="packed-stream-root"/);
-
-const specifier = 'data:text/javascript,' + encodeURIComponent('export default () => "Specifier consumer"');
-const specifierChunks = [];
-for await (const chunk of reactServer.renderReactRemoteBySpecifierToStream({
-  specifier,
-  props: {},
-  rootId: 'packed-specifier-root',
-  timeoutMs: 1000,
-})) {
-  specifierChunks.push(Buffer.from(chunk));
-}
-const specifierMarkup = Buffer.concat(specifierChunks).toString();
-assert.match(specifierMarkup, /Specifier consumer/);
-assert.match(specifierMarkup, /data-mfe-react-hydration="packed-specifier-root"/);
-
-const specifierHtml = await reactServer.renderReactRemoteBySpecifier({
-  specifier,
-  props: {},
-  rootId: 'packed-specifier-string-root',
-});
-assert.match(specifierHtml, /Specifier consumer/);
-assert.match(specifierHtml, /data-mfe-react-hydration="packed-specifier-string-root"/);
-
-await import('@mfe-ssr/react/bootstrap');
 console.log('Tarball consumer smoke passed.');
 `,
     );
@@ -253,7 +181,7 @@ function runTypeScript(entry, cwd) {
       '--lib',
       'ES2022,DOM',
       '--types',
-      'node,react,react-dom',
+      'node',
       '--skipLibCheck',
       'false',
       entry,

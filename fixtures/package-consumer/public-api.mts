@@ -1,6 +1,3 @@
-import '@mfe-ssr/react/bootstrap';
-
-import { createElement } from 'react';
 import {
   ManifestError,
   createManifestResolver,
@@ -20,21 +17,13 @@ import {
   checkRemoteHealth,
   createNodeResolver,
   registerNodeLoader,
-  type RemoteModuleCacheOptions,
   type NodeLoaderData,
   type NodeLoaderOptions,
-  type RemoteModuleErrorCode,
   type RemoteHealthResult,
+  type RemoteModuleCacheOptions,
+  type RemoteModuleErrorCode,
 } from '@mfe-ssr/node';
 import { initialize, load, resolve } from '@mfe-ssr/node/loader';
-import { renderReactRemote, type ReactRemoteModule } from '@mfe-ssr/react';
-import {
-  renderReactRemote as renderReactRemoteFromServer,
-  renderReactRemoteBySpecifier,
-  renderReactRemoteBySpecifierToStream,
-  renderReactRemoteToStream,
-} from '@mfe-ssr/react/server';
-import { setReactDiagnosticHandler } from '@mfe-ssr/react/client';
 
 const manifest = {
   imports: {
@@ -98,46 +87,6 @@ void load(
   async (url) => ({ format: 'module', source: `export default ${JSON.stringify(url)}` }),
 );
 
-interface ConsumerProps {
-  count: number;
-}
-
-const remote: ReactRemoteModule<ConsumerProps> = {
-  default: ({ count }) => createElement('p', null, count),
-};
-const html: string = renderReactRemote({
-  specifier: '@mfe/consumer',
-  remote,
-  props: { count: 2 },
-  onDiagnostic: (event) => void event.phase,
-});
-const serverHtml: string = renderReactRemoteFromServer({
-  specifier: '@mfe/consumer',
-  remote,
-  props: { count: 2 },
-});
-const streamedHtml: AsyncIterable<Uint8Array> = renderReactRemoteToStream({
-  specifier: '@mfe/consumer',
-  remote,
-  props: { count: 2 },
-});
-const specifierStream: AsyncIterable<Uint8Array> = renderReactRemoteBySpecifierToStream({
-  specifier: '@mfe/consumer',
-  props: { count: 2 },
-  loadRemote: async () => remote,
-  timeoutMs: 1_000,
-});
-const specifierHtml: Promise<string> = renderReactRemoteBySpecifier({
-  specifier: '@mfe/consumer',
-  props: { count: 2 },
-  loadRemote: async () => remote,
-});
-
-// @ts-expect-error React remote props are checked against the component contract.
-renderReactRemote({ specifier: '@mfe/consumer', remote, props: { name: 'wrong shape' } });
-
-setReactDiagnosticHandler((event) => void event.phase);
-
 void [
   ManifestError,
   serverUrl,
@@ -149,10 +98,5 @@ void [
   verifiedModule,
   integrityErrorCode,
   cacheOptions,
-  html,
-  serverHtml,
-  streamedHtml,
-  specifierStream,
-  specifierHtml,
   healthResults,
 ];
