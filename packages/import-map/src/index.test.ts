@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createBrowserImportMap,
   createImportMapScript,
+  createModulePreloadLinks,
   injectImportMap,
   serializeImportMap,
 } from './index';
@@ -148,6 +149,77 @@ describe('createImportMapScript', () => {
 
     expect(script).toMatch(/^<script type="importmap">[\s\S]*<\/script>$/);
     expect(JSON.parse(json)).toEqual(createBrowserImportMap(manifest));
+  });
+});
+
+describe('createModulePreloadLinks', () => {
+  it('preloads only selected remotes and carries their integrity metadata', () => {
+    const links = createModulePreloadLinks(manifest, ['@mfe/cart'], {
+      documentUrl: 'https://app.example.com/products/42',
+    });
+
+    expect(links).toContain(
+      `<link rel="modulepreload" href="https://cdn.example.com/cart/client.js" crossorigin="anonymous" integrity="${cartClientIntegrity}">`,
+    );
+    expect(links.match(/rel="modulepreload"/g)).toHaveLength(1);
+    expect(links).not.toContain('cart-checkout');
+  });
+
+  it('uses the scoped mapping selected by the importing module URL', () => {
+    const links = createModulePreloadLinks(manifest, ['@mfe/cart'], {
+      documentUrl: 'https://app.example.com/checkout',
+      parentUrl: 'https://app.example.com/checkout/entry.mjs',
+    });
+
+    expect(links).toContain('https://cdn.example.com/cart-checkout/client.js');
+    expect(links).not.toContain('https://cdn.example.com/cart/client.js');
+  });
+
+  it('deduplicates selected aliases that resolve to one URL', () => {
+    const manifestWithAlias: RemoteManifest = {
+      imports: {
+        ...manifest.imports,
+        '@mfe/cart-alias': {
+          ...manifest.imports['@mfe/cart'],
+          id: '@mfe/cart-alias',
+        },
+      },
+    };
+
+    const links = createModulePreloadLinks(manifestWithAlias, ['@mfe/cart', '@mfe/cart-alias'], {
+      documentUrl: 'https://app.example.com/',
+    });
+
+    expect(links.match(/rel="modulepreload"/g)).toHaveLength(1);
+  });
+
+  it('resolves relative client entries against the document URL', () => {
+    const relativeManifest: RemoteManifest = {
+      imports: {
+        '@mfe/relative': {
+          id: '@mfe/relative',
+          version: '1.0.0',
+          client: './assets/remote.mjs',
+          server: './remote.server.mjs',
+          integrity: { client: cartClientIntegrity },
+        },
+      },
+    };
+
+    const links = createModulePreloadLinks(relativeManifest, ['@mfe/relative'], {
+      documentUrl: 'https://app.example.com/catalog/item',
+    });
+
+    expect(links).toContain('href="https://app.example.com/catalog/assets/remote.mjs"');
+    expect(links).toContain(`integrity="${cartClientIntegrity}"`);
+  });
+
+  it('throws when a selected specifier is not mapped by the manifest', () => {
+    expect(() =>
+      createModulePreloadLinks(manifest, ['@mfe/missing'], {
+        documentUrl: 'https://app.example.com/',
+      }),
+    ).toThrow('No client manifest entry resolves selected remote "@mfe/missing".');
   });
 });
 

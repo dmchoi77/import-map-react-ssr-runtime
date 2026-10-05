@@ -122,6 +122,7 @@ assert.equal(typeof core.createManifestResolver, 'function');
 assert.equal(typeof nodeRuntime.registerNodeLoader, 'function');
 assert.equal(typeof importMap.createBrowserImportMap, 'function');
 assert.equal(typeof importMap.serializeImportMap, 'function');
+assert.equal(typeof importMap.createModulePreloadLinks, 'function');
 assert.equal(reactRuntime.renderReactRemote, reactServer.renderReactRemote);
 assert.equal(typeof reactServer.renderReactRemoteToStream, 'function');
 assert.equal(typeof reactServer.renderReactRemoteBySpecifierToStream, 'function');
@@ -129,6 +130,11 @@ assert.equal(typeof reactServer.renderReactRemoteBySpecifierToStream, 'function'
 const browserMap = importMap.createBrowserImportMap(manifest);
 assert.equal(browserMap.imports['@mfe/consumer'], manifest.imports['@mfe/consumer'].client);
 assert.match(importMap.serializeImportMap(browserMap), /cdn\\.example\\.com/);
+const preloadLinks = importMap.createModulePreloadLinks(manifest, ['@mfe/consumer'], {
+  documentUrl: 'https://consumer.example.com/',
+});
+assert.match(preloadLinks, /rel="modulepreload"/);
+assert.match(preloadLinks, /https:\\/\\/cdn\\.example\\.com\\/consumer\\/client\\.mjs/);
 
 const resolveRemote = nodeRuntime.createNodeResolver(manifest, {
   baseUrl: 'file:///consumer/',

@@ -56,6 +56,19 @@ describe('React fixture host', () => {
     expect(importMapIndex).toBeGreaterThanOrEqual(0);
     expect(bootstrapIndex).toBeGreaterThan(importMapIndex);
     expect(moduleScriptCount).toBe(1);
+    const modulePreloadLinks = [...html.matchAll(/<link rel="modulepreload"[^>]*>/g)].map(
+      ([link]) => link,
+    );
+    expect(modulePreloadLinks).toHaveLength(2);
+    expect(modulePreloadLinks.some((link) => link.includes('/remote/counter.client.mjs'))).toBe(
+      true,
+    );
+    expect(modulePreloadLinks.some((link) => link.includes('/remote/profile.client.mjs'))).toBe(
+      true,
+    );
+    const firstPreloadIndex = html.indexOf('<link rel="modulepreload"');
+    expect(firstPreloadIndex).toBeGreaterThan(importMapIndex);
+    expect(firstPreloadIndex).toBeLessThan(bootstrapIndex);
     expect(html).not.toContain('hydrateRoot');
     expect(html).not.toContain('hydrateReactRemotes');
 
@@ -83,6 +96,7 @@ describe('React fixture host', () => {
     expect(html).toContain('data-mfe-page="failure"');
     expect(html).toContain('data-mfe-fallback="server"');
     expect(html).toContain('Remote unavailable');
+    expect(html).not.toContain('rel="modulepreload"');
   });
 
   it('streams the host shell before a delayed remote resolves', async () => {

@@ -10,6 +10,7 @@ import {
 import {
   createBrowserImportMap,
   createImportMapScript,
+  createModulePreloadLinks,
   injectImportMap,
   serializeImportMap,
 } from '@mfe-ssr/import-map';
@@ -46,6 +47,9 @@ const serverUrl: string | undefined = resolver.resolve('@mfe/consumer');
 const importMap = createBrowserImportMap(manifest);
 const serializedMap: string = serializeImportMap(importMap);
 const importMapScript: string = createImportMapScript(manifest);
+const modulePreloadLinks: string = createModulePreloadLinks(manifest, ['@mfe/consumer'], {
+  documentUrl: 'https://consumer.example.com/',
+});
 const injectedScript: HTMLScriptElement = injectImportMap(document, manifest);
 const nodeResolver = createNodeResolver(manifest, { baseUrl: 'file:///consumer/' });
 const nodeUrl: string | undefined = nodeResolver('@mfe/consumer');
@@ -111,6 +115,7 @@ void [
   serverUrl,
   serializedMap,
   importMapScript,
+  modulePreloadLinks,
   injectedScript,
   nodeUrl,
   verifiedModule,

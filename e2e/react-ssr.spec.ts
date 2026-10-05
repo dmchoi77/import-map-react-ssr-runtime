@@ -21,6 +21,12 @@ test('streams remote markup and hydrates it in the browser', async ({ page }) =>
   const response = await page.goto('/stream', { waitUntil: 'commit' });
 
   expect(response?.status()).toBe(200);
+  const modulePreloadHrefs = await page
+    .locator('link[rel="modulepreload"]')
+    .evaluateAll((links) => links.map((link) => (link as HTMLLinkElement).href));
+  expect(modulePreloadHrefs).toHaveLength(1);
+  expect(modulePreloadHrefs[0]).toContain('/remote/counter.client.mjs');
+  expect(modulePreloadHrefs.join('')).not.toContain('profile.client.mjs');
   await expect(page.locator('#host-status')).toHaveText('SSR ready');
   const counterButton = page.locator('#counter-increment');
   await expect(counterButton).toHaveText('Count: 0');
@@ -53,6 +59,22 @@ test('hydrates independent remotes and keeps their SSR roots interactive', async
 
   const response = await page.goto('/');
   expect(response?.status()).toBe(200);
+  const modulePreloadHrefs = await page
+    .locator('link[rel="modulepreload"]')
+    .evaluateAll((links) => links.map((link) => (link as HTMLLinkElement).href));
+  expect(modulePreloadHrefs).toHaveLength(2);
+  expect(modulePreloadHrefs.some((href) => href.includes('counter.client.mjs'))).toBe(true);
+  expect(modulePreloadHrefs.some((href) => href.includes('profile.client.mjs'))).toBe(true);
+  const hintsPrecedeBootstrap = await page.evaluate(() => {
+    const hint = document.querySelector('link[rel="modulepreload"]');
+    const bootstrap = document.querySelector('script[type="module"][src]');
+    return Boolean(
+      hint &&
+      bootstrap &&
+      (hint.compareDocumentPosition(bootstrap) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+    );
+  });
+  expect(hintsPrecedeBootstrap).toBe(true);
   await page.waitForLoadState('networkidle');
 
   const counterButton = page.locator('#counter-increment');

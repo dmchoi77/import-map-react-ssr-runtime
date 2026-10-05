@@ -8,7 +8,11 @@ import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 
-import { createBrowserImportMap, serializeImportMap } from '@mfe-ssr/import-map';
+import {
+  createBrowserImportMap,
+  createModulePreloadLinks,
+  serializeImportMap,
+} from '@mfe-ssr/import-map';
 import { renderReactRemote, renderReactRemoteBySpecifierToStream } from '@mfe-ssr/react/server';
 
 import { createClientManifest } from '../react-remote/manifest.mjs';
@@ -31,6 +35,7 @@ export function createFixtureMiddleware({
           response,
           loadRemote,
           origin: requestUrl.origin,
+          documentUrl: requestUrl.href,
           HostApp,
           bootstrapPath,
           clientPath,
@@ -45,6 +50,7 @@ export function createFixtureMiddleware({
         const pageOptions = {
           loadRemote,
           origin: requestUrl.origin,
+          documentUrl: requestUrl.href,
           HostApp,
           bootstrapPath,
           clientPath,
@@ -132,7 +138,14 @@ async function addDirectoryFiles(runtimeFiles, directoryUrl, urlPrefix) {
   }
 }
 
-async function renderHomePage({ loadRemote, origin, HostApp, bootstrapPath, clientPath }) {
+async function renderHomePage({
+  loadRemote,
+  origin,
+  documentUrl,
+  HostApp,
+  bootstrapPath,
+  clientPath,
+}) {
   const counterProps = { label: 'Counter', state: { count: 0 } };
   const profileProps = { name: 'Ada Lovelace' };
   const counter = await loadRemote('@mfe/fixture/counter');
@@ -154,24 +167,35 @@ async function renderHomePage({ loadRemote, origin, HostApp, bootstrapPath, clie
 
   return renderDocument({
     origin,
+    documentUrl,
     page: 'home',
     HostApp,
     bootstrapPath,
     clientPath,
+    selectedRemoteSpecifiers: ['@mfe/fixture/counter', '@mfe/fixture/profile'],
     body: [counterHtml, profileHtml].join(''),
   });
 }
 
-async function renderFailurePage({ loadRemote, origin, HostApp, bootstrapPath, clientPath }) {
+async function renderFailurePage({
+  loadRemote,
+  origin,
+  documentUrl,
+  HostApp,
+  bootstrapPath,
+  clientPath,
+}) {
   try {
     await loadRemote('@mfe/fixture/missing');
   } catch {
     return renderDocument({
       origin,
+      documentUrl,
       page: 'failure',
       HostApp,
       bootstrapPath,
       clientPath,
+      selectedRemoteSpecifiers: [],
       body: '<div id="failure-root" data-mfe-fallback="server"><p>Remote unavailable</p></div>',
     });
   }
@@ -183,6 +207,7 @@ async function renderStreamPage({
   response,
   loadRemote,
   origin,
+  documentUrl,
   HostApp,
   bootstrapPath,
   clientPath,
@@ -199,9 +224,12 @@ async function renderStreamPage({
   async function* documentChunks() {
     yield renderDocumentStart({
       origin,
+      documentUrl,
       page: 'stream',
       HostApp,
+      bootstrapPath,
       clientPath,
+      selectedRemoteSpecifiers: failure ? [] : ['@mfe/fixture/counter'],
     });
 
     try {
@@ -239,12 +267,42 @@ async function renderStreamPage({
   }
 }
 
-function renderDocument({ origin, page, body, HostApp, bootstrapPath, clientPath }) {
-  return `${renderDocumentStart({ origin, page, HostApp, clientPath })}${body}${renderDocumentEnd(bootstrapPath)}`;
+function renderDocument({
+  origin,
+  documentUrl,
+  page,
+  body,
+  HostApp,
+  bootstrapPath,
+  clientPath,
+  selectedRemoteSpecifiers,
+}) {
+  return `${renderDocumentStart({
+    origin,
+    documentUrl,
+    page,
+    HostApp,
+    bootstrapPath,
+    clientPath,
+    selectedRemoteSpecifiers,
+  })}${body}${renderDocumentEnd(bootstrapPath)}`;
 }
 
-function renderDocumentStart({ origin, page, HostApp, clientPath }) {
-  const importMap = createBrowserImportMap(createClientManifest(origin, clientPath));
+function renderDocumentStart({
+  origin,
+  documentUrl,
+  page,
+  HostApp,
+  bootstrapPath,
+  clientPath,
+  selectedRemoteSpecifiers,
+}) {
+  const manifest = createClientManifest(origin, clientPath);
+  const importMap = createBrowserImportMap(manifest);
+  const modulePreloadLinks = createModulePreloadLinks(manifest, selectedRemoteSpecifiers, {
+    documentUrl,
+    parentUrl: new URL(bootstrapPath, documentUrl).href,
+  });
   importMap.imports.react = 'https://esm.sh/react@19.3.0';
   importMap.imports['react/jsx-runtime'] = 'https://esm.sh/react@19.3.0/jsx-runtime';
   importMap.imports['react-dom/client'] = 'https://esm.sh/react-dom@19.3.0/client?external=react';
@@ -257,6 +315,7 @@ function renderDocumentStart({ origin, page, HostApp, clientPath }) {
     <meta charset="utf-8" />
     <title>React SSR Fixture</title>
     <script type="importmap">${serializeImportMap(importMap)}</script>
+    ${modulePreloadLinks}
   </head>
   <body data-mfe-page="${page}">
     <main><div id="host-app-root">${hostApp}</div>`;
