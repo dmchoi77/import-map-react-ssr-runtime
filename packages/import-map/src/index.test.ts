@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -8,6 +10,8 @@ import {
 } from './index';
 import type { RemoteManifest } from '@mfe-ssr/core';
 
+const cartClientIntegrity = `sha384-${createHash('sha384').update('cart client').digest('base64')}`;
+
 const manifest: RemoteManifest = {
   imports: {
     '@mfe/cart': {
@@ -15,6 +19,7 @@ const manifest: RemoteManifest = {
       version: '1.0.0',
       client: 'https://cdn.example.com/cart/client.js',
       server: 'file:///srv/cart/server.js',
+      integrity: { client: cartClientIntegrity },
     },
   },
   scopes: {
@@ -107,6 +112,9 @@ describe('import map generation', () => {
     expect(createBrowserImportMap(manifest)).toEqual({
       imports: {
         '@mfe/cart': 'https://cdn.example.com/cart/client.js',
+      },
+      integrity: {
+        'https://cdn.example.com/cart/client.js': cartClientIntegrity,
       },
       scopes: {
         '/checkout/': {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { after, before, test } from 'node:test';
@@ -9,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 
 const remoteSpecifier = '@mfe/node-loader-integration';
 const modulePath = '/entry.mjs';
+const entrySource =
+  'import { answer as baseAnswer } from "./dependency.mjs"; export const dependency = baseAnswer; export const answer = baseAnswer + 1; export default answer;';
 const requestedPaths = new Map();
 let blockedRequestCount = 0;
 const allowedServer = createServer(handleAllowedRequest);
@@ -38,11 +41,45 @@ after(async () => {
 
 test('loads an HTTP remote and its relative dependency through node --import', async () => {
   requestedPaths.clear();
-  const report = await importRemote(`${allowedOrigin}${modulePath}`);
+  const report = await importRemote(
+    `${allowedOrigin}${modulePath}`,
+    {},
+    {
+      '@mfe/integrity-alias': {
+        id: '@mfe/integrity-alias',
+        version: '1.0.0',
+        client: 'https://fixture.invalid/dependency.mjs',
+        server: `${allowedOrigin}/dependency.mjs`,
+        integrity: { server: integrityFor('export const answer = 41;') },
+      },
+    },
+    integrityFor(entrySource),
+  );
 
   assert.deepEqual(report, { ok: true, answer: 42, dependency: 41 });
   assert.equal(requestedPaths.get('/entry.mjs'), 1);
   assert.equal(requestedPaths.get('/dependency.mjs'), 1);
+});
+
+test('rejects a tampered relative dependency before evaluating its source', async () => {
+  const report = await importRemote(
+    `${allowedOrigin}/entry-with-tampered-dependency.mjs`,
+    {},
+    {
+      '@mfe/tampered-alias': {
+        id: '@mfe/tampered-alias',
+        version: '1.0.0',
+        client: 'https://fixture.invalid/tampered.mjs',
+        server: `${allowedOrigin}/tampered.mjs`,
+        integrity: { server: integrityFor('export const safe = true;') },
+      },
+    },
+    integrityFor('import "./tampered.mjs"; export const ok = true;'),
+  );
+
+  assert.equal(report.ok, false);
+  assert.equal(report.integrityExecuted, false);
+  assert.match(report.message, /integrity/i);
 });
 
 test('rejects an HTTP remote outside the configured origin allowlist', async () => {
@@ -70,15 +107,25 @@ function handleAllowedRequest(request, response) {
 
   if (path === '/entry.mjs') {
     response.writeHead(200, { 'content-type': 'text/javascript' });
-    response.end(
-      'import { answer as baseAnswer } from "./dependency.mjs"; export const dependency = baseAnswer; export const answer = baseAnswer + 1; export default answer;',
-    );
+    response.end(entrySource);
+    return;
+  }
+
+  if (path === '/entry-with-tampered-dependency.mjs') {
+    response.writeHead(200, { 'content-type': 'text/javascript' });
+    response.end('import "./tampered.mjs"; export const ok = true;');
     return;
   }
 
   if (path === '/dependency.mjs') {
     response.writeHead(200, { 'content-type': 'text/javascript' });
     response.end('export const answer = 41;');
+    return;
+  }
+
+  if (path === '/tampered.mjs') {
+    response.writeHead(200, { 'content-type': 'text/javascript' });
+    response.end('globalThis.__mfeIntegrityExecuted = true; export const safe = false;');
     return;
   }
 
@@ -100,7 +147,7 @@ function handleAllowedRequest(request, response) {
   response.end();
 }
 
-async function importRemote(serverUrl, overrides = {}) {
+async function importRemote(serverUrl, overrides = {}, additionalEntries = {}, rootIntegrity) {
   const preloadUrl = new URL('../dist/index.mjs', import.meta.url).href;
   const preloadPath = join(testDirectory, `preload-${preloadIndex++}.mjs`);
   const manifest = {
@@ -110,7 +157,9 @@ async function importRemote(serverUrl, overrides = {}) {
         version: '1.0.0',
         client: 'https://fixture.invalid/client.mjs',
         server: serverUrl,
+        ...(rootIntegrity ? { integrity: { server: rootIntegrity } } : {}),
       },
+      ...additionalEntries,
     },
   };
   const options = {
@@ -131,7 +180,7 @@ async function importRemote(serverUrl, overrides = {}) {
       const remote = await import(${JSON.stringify(remoteSpecifier)});
       console.log(JSON.stringify({ ok: true, answer: remote.default, dependency: remote.dependency }));
     } catch (error) {
-      console.log(JSON.stringify({ ok: false, name: error.name, code: error.code, message: error.message }));
+      console.log(JSON.stringify({ ok: false, name: error.name, code: error.code, message: error.message, integrityExecuted: globalThis.__mfeIntegrityExecuted === true }));
     }
   `;
   const result = await runNode(['--import', preloadPath, '--input-type=module', '--eval', source]);
@@ -140,6 +189,10 @@ async function importRemote(serverUrl, overrides = {}) {
   const output = result.stdout.trim().split('\n').at(-1);
   assert.ok(output, `Expected child process to report an import result. stderr: ${result.stderr}`);
   return JSON.parse(output);
+}
+
+function integrityFor(source) {
+  return `sha384-${createHash('sha384').update(source).digest('base64')}`;
 }
 
 function runNode(args) {

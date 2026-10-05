@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import { createNodeResolver } from './index';
@@ -86,9 +88,145 @@ describe('Node loader hooks', () => {
       shortCircuit: true,
     });
   });
+
+  it('rejects conflicting server integrity metadata for the same URL', () => {
+    const shared = {
+      version: '1.0.0',
+      client: 'https://cdn.example.com/shared.mjs',
+      server: './shared.mjs',
+    };
+
+    expect(() =>
+      initialize({
+        manifest: {
+          imports: {
+            '@mfe/first': {
+              ...shared,
+              id: '@mfe/first',
+              integrity: {
+                server: `sha384-${createHash('sha384').update('first').digest('base64')}`,
+              },
+            },
+            '@mfe/second': {
+              ...shared,
+              id: '@mfe/second',
+              integrity: {
+                server: `sha384-${createHash('sha384').update('second').digest('base64')}`,
+              },
+            },
+          },
+        },
+        options: { baseUrl: 'file:///srv/host/' },
+      }),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_REMOTE_INTEGRITY' }));
+  });
 });
 
 describe('RemoteModuleFetcher', () => {
+  it.each(['sha256', 'sha384', 'sha512'] as const)(
+    'accepts a valid %s digest',
+    async (algorithm) => {
+      const source = 'export default "remote"';
+      const integrity = `${algorithm}-${createHash(algorithm).update(source).digest('base64')}`;
+      const fetcher = new RemoteModuleFetcher({
+        allowedOrigins: ['https://cdn.example.com'],
+        fetch: async () => new Response(source),
+      });
+
+      await expect(fetcher.fetch('https://cdn.example.com/remote.mjs', integrity)).resolves.toBe(
+        source,
+      );
+    },
+  );
+
+  it('accepts unpadded Base64URL integrity digests', async () => {
+    const source = 'source-0';
+    const digest = createHash('sha384').update(source).digest('base64');
+    const integrity = `sha384-${digest.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      fetch: async () => new Response(source),
+    });
+
+    await expect(fetcher.fetch('https://cdn.example.com/remote.mjs', integrity)).resolves.toBe(
+      source,
+    );
+  });
+
+  it('checks the original response bytes before decoding source text', async () => {
+    const sourceBytes = Buffer.from('\uFEFFexport default "remote"');
+    const integrity = `sha384-${createHash('sha384').update(sourceBytes).digest('base64')}`;
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      fetch: async () => new Response(sourceBytes),
+    });
+
+    await expect(fetcher.fetch('https://cdn.example.com/remote.mjs', integrity)).resolves.toBe(
+      'export default "remote"',
+    );
+  });
+
+  it('verifies response bytes against integrity and does not reuse a different digest cache entry', async () => {
+    const source = 'export default "remote"';
+    const validIntegrity = `sha384-${createHash('sha384').update(source).digest('base64')}`;
+    const invalidIntegrity = `sha384-${createHash('sha384').update('tampered').digest('base64')}`;
+    let calls = 0;
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      fetch: async () => {
+        calls += 1;
+        return new Response(source);
+      },
+    });
+
+    await expect(fetcher.fetch('https://cdn.example.com/remote.mjs')).resolves.toBe(source);
+    await expect(fetcher.fetch('https://cdn.example.com/remote.mjs', validIntegrity)).resolves.toBe(
+      source,
+    );
+    await expect(
+      fetcher.fetch('https://cdn.example.com/remote.mjs', invalidIntegrity),
+    ).rejects.toMatchObject({
+      code: 'REMOTE_INTEGRITY_MISMATCH',
+    });
+    expect(calls).toBe(3);
+  });
+
+  it('uses only the strongest supported digest algorithm in a metadata list', async () => {
+    const source = 'export default "remote"';
+    const integrity = [
+      `sha256-${createHash('sha256').update(source).digest('base64')}`,
+      `sha512-${createHash('sha512').update('tampered').digest('base64')}`,
+    ].join(' ');
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      fetch: async () => new Response(source),
+    });
+
+    await expect(
+      fetcher.fetch('https://cdn.example.com/remote.mjs', integrity),
+    ).rejects.toMatchObject({
+      code: 'REMOTE_INTEGRITY_MISMATCH',
+    });
+  });
+
+  it('rejects integrity metadata that has no supported digest without fetching', async () => {
+    let calls = 0;
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      fetch: async () => {
+        calls += 1;
+        return new Response('export default "remote"');
+      },
+    });
+
+    await expect(
+      fetcher.fetch('https://cdn.example.com/remote.mjs', 'sha1-abc'),
+    ).rejects.toMatchObject({
+      code: 'INVALID_REMOTE_INTEGRITY',
+    });
+    expect(calls).toBe(0);
+  });
+
   it('fetches an allowed module and shares concurrent requests in memory', async () => {
     let calls = 0;
     const fetcher = new RemoteModuleFetcher({

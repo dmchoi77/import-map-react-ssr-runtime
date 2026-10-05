@@ -37,6 +37,13 @@ export interface ImportMapResolver {
   resolve(specifier: string, parentUrl?: string): string | undefined;
 }
 
+const INTEGRITY_DIGEST_LENGTHS = new Map<string, number>([
+  ['sha256', 32],
+  ['sha384', 48],
+  ['sha512', 64],
+]);
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
 export class ManifestError extends Error {
   readonly code: ManifestErrorCode;
   readonly path?: string;
@@ -225,8 +232,71 @@ function validateEntry(
           `${path}.integrity.${key}`,
         );
       }
+      if (typeof value === 'string') {
+        validateIntegrityMetadata(value, `${path}.integrity.${key}`);
+      }
     }
   }
+}
+
+function validateIntegrityMetadata(value: string, path: string): void {
+  let hasSupportedDigest = false;
+
+  for (const token of value.split(/\s+/).filter(Boolean)) {
+    const expression = token.split('?')[0];
+    const separator = expression.indexOf('-');
+    const algorithm = (separator < 0 ? expression : expression.slice(0, separator)).toLowerCase();
+    const digestLength = INTEGRITY_DIGEST_LENGTHS.get(algorithm);
+    if (digestLength === undefined) {
+      continue;
+    }
+
+    hasSupportedDigest = true;
+    const digest = separator < 0 ? '' : expression.slice(separator + 1);
+    if (!isCanonicalBase64Digest(digest, digestLength)) {
+      throw new ManifestError(
+        'INVALID_MANIFEST',
+        'Integrity metadata contains a malformed supported digest.',
+        path,
+      );
+    }
+  }
+
+  if (!hasSupportedDigest) {
+    throw new ManifestError(
+      'INVALID_MANIFEST',
+      'Integrity metadata must contain a supported sha256, sha384, or sha512 digest.',
+      path,
+    );
+  }
+}
+
+function isCanonicalBase64Digest(value: string, digestLength: number): boolean {
+  if (!/^[A-Za-z0-9+/_-]+={0,2}$/.test(value)) {
+    return false;
+  }
+
+  const unpadded = value.replace(/=+$/, '');
+  const expectedUnpaddedLength = Math.ceil((digestLength * 4) / 3);
+  const paddingLength = (3 - (digestLength % 3)) % 3;
+  if (
+    unpadded.length !== expectedUnpaddedLength ||
+    (value.length !== unpadded.length && value.length !== unpadded.length + paddingLength) ||
+    (value.length > unpadded.length && !value.endsWith('='.repeat(paddingLength)))
+  ) {
+    return false;
+  }
+
+  const lastDataCharacter = unpadded[unpadded.length - 1];
+  const normalizedCharacter = lastDataCharacter.replace('-', '+').replace('_', '/');
+  const lastDataValue = BASE64_ALPHABET.indexOf(normalizedCharacter);
+  if (paddingLength === 1 && (lastDataValue & 0b11) !== 0) {
+    return false;
+  }
+  if (paddingLength === 2 && (lastDataValue & 0b1111) !== 0) {
+    return false;
+  }
+  return true;
 }
 
 function validateSpecifier(specifier: string, path: string): void {
@@ -331,7 +401,16 @@ function toIntegrityMappings(
   for (const [specifier, entry] of allMappings) {
     const integrity = entry.integrity?.[target];
     if (integrity && !specifier.endsWith('/')) {
-      result[entry[target]] = integrity;
+      const address = entry[target];
+      const previousIntegrity = result[address];
+      if (previousIntegrity && previousIntegrity !== integrity) {
+        throw new ManifestError(
+          'CONFLICTING_ENTRY',
+          `Conflicting ${target} integrity metadata maps to "${address}".`,
+          `integrity.${address}`,
+        );
+      }
+      result[address] = integrity;
     }
   }
 

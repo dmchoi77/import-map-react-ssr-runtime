@@ -14,10 +14,12 @@ import {
   serializeImportMap,
 } from '@mfe-ssr/import-map';
 import {
+  RemoteModuleFetcher,
   createNodeResolver,
   registerNodeLoader,
   type NodeLoaderData,
   type NodeLoaderOptions,
+  type RemoteModuleErrorCode,
 } from '@mfe-ssr/node';
 import { initialize, load, resolve } from '@mfe-ssr/node/loader';
 import { renderReactRemote, type ReactRemoteModule } from '@mfe-ssr/react';
@@ -45,6 +47,12 @@ const nodeResolver = createNodeResolver(manifest, { baseUrl: 'file:///consumer/'
 const nodeUrl: string | undefined = nodeResolver('@mfe/consumer');
 const nodeOptions: NodeLoaderOptions = { allowedOrigins: ['https://cdn.example.com'] };
 const loaderData: NodeLoaderData = { manifest, options: nodeOptions };
+const fetcher = new RemoteModuleFetcher(nodeOptions);
+const verifiedModule: Promise<string> = fetcher.fetch(
+  'https://cdn.example.com/consumer/server.mjs',
+  'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+);
+const integrityErrorCode: RemoteModuleErrorCode = 'REMOTE_INTEGRITY_MISMATCH';
 registerNodeLoader(manifest, nodeOptions);
 initialize(loaderData);
 void resolve(
@@ -90,6 +98,8 @@ void [
   importMapScript,
   injectedScript,
   nodeUrl,
+  verifiedModule,
+  integrityErrorCode,
   html,
   serverHtml,
 ];
