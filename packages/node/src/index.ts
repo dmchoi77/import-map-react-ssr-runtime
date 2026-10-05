@@ -6,6 +6,7 @@ export {
   RemoteModuleError,
   RemoteModuleFetcher,
   type RemoteModuleErrorCode,
+  type RemoteModuleCacheOptions,
   type RemoteModuleFetcherOptions,
 } from './remote-fetcher';
 

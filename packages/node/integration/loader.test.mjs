@@ -61,6 +61,25 @@ test('loads an HTTP remote and its relative dependency through node --import', a
   assert.equal(requestedPaths.get('/dependency.mjs'), 1);
 });
 
+test('reuses the persistent remote cache after restarting the Node process', async () => {
+  requestedPaths.clear();
+  const cacheDirectory = join(testDirectory, 'persistent-remote-cache');
+  const cacheOptions = {
+    directory: cacheDirectory,
+    ttlMs: 60_000,
+    maxSizeBytes: 4_096,
+  };
+  const serverUrl = `${allowedOrigin}/persistent.mjs`;
+  const integrity = integrityFor('export default "persistent";');
+
+  const first = await importRemote(serverUrl, { cache: cacheOptions }, {}, integrity);
+  const restarted = await importRemote(serverUrl, { cache: cacheOptions }, {}, integrity);
+
+  assert.deepEqual(first, { ok: true, answer: 'persistent' });
+  assert.deepEqual(restarted, first);
+  assert.equal(requestedPaths.get('/persistent.mjs'), 1);
+});
+
 test('rejects a tampered relative dependency before evaluating its source', async () => {
   const report = await importRemote(
     `${allowedOrigin}/entry-with-tampered-dependency.mjs`,
@@ -114,6 +133,12 @@ function handleAllowedRequest(request, response) {
   if (path === '/entry-with-tampered-dependency.mjs') {
     response.writeHead(200, { 'content-type': 'text/javascript' });
     response.end('import "./tampered.mjs"; export const ok = true;');
+    return;
+  }
+
+  if (path === '/persistent.mjs') {
+    response.writeHead(200, { 'content-type': 'text/javascript' });
+    response.end('export default "persistent";');
     return;
   }
 

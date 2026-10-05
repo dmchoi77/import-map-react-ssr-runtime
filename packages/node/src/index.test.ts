@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createNodeResolver } from './index';
 import { RemoteModuleFetcher } from './remote-fetcher';
@@ -23,6 +26,21 @@ const manifest: RemoteManifest = {
     },
   },
 };
+
+const cacheDirectories: string[] = [];
+
+afterEach(async () => {
+  vi.useRealTimers();
+  await Promise.all(
+    cacheDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+  );
+});
+
+async function createCacheDirectory(): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), 'mfe-remote-cache-'));
+  cacheDirectories.push(directory);
+  return directory;
+}
 
 describe('createNodeResolver', () => {
   it('resolves server entries from the manifest', () => {
@@ -250,6 +268,241 @@ describe('RemoteModuleFetcher', () => {
     expect(second).toBe(first);
     expect(calls).toBe(1);
     expect(fetcher.size).toBe(1);
+  });
+
+  it('expires in-memory entries after the configured TTL', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    let calls = 0;
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      cache: { ttlMs: 100, maxSizeBytes: 1024 },
+      fetch: async () => new Response(`source-${++calls}`),
+    });
+
+    await expect(fetcher.fetch('https://cdn.example.com/remote.mjs')).resolves.toBe('source-1');
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.101Z'));
+    await expect(fetcher.fetch('https://cdn.example.com/remote.mjs')).resolves.toBe('source-2');
+    expect(calls).toBe(2);
+  });
+
+  it('evicts least-recently-used entries when the memory cache reaches its byte limit', async () => {
+    const callsByUrl = new Map<string, number>();
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      cache: { ttlMs: 60_000, maxSizeBytes: Buffer.byteLength('export default "x"') * 2 },
+      fetch: async (input) => {
+        const url = String(input);
+        callsByUrl.set(url, (callsByUrl.get(url) ?? 0) + 1);
+        return new Response(`export default "${url.at(-5)}"`);
+      },
+    });
+    const fetchRemote = (name: string) => fetcher.fetch(`https://cdn.example.com/${name}.mjs`);
+
+    await fetchRemote('aaa');
+    await fetchRemote('bbb');
+    await fetchRemote('aaa');
+    await fetchRemote('ccc');
+    await fetchRemote('bbb');
+
+    expect(callsByUrl.get('https://cdn.example.com/aaa.mjs')).toBe(1);
+    expect(callsByUrl.get('https://cdn.example.com/bbb.mjs')).toBe(2);
+    expect(fetcher.size).toBe(2);
+  });
+
+  it('does not cache failed responses', async () => {
+    let calls = 0;
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      fetch: async () => {
+        calls += 1;
+        return calls === 1 ? new Response('unavailable', { status: 503 }) : new Response('ready');
+      },
+    });
+
+    await expect(fetcher.fetch('https://cdn.example.com/remote.mjs')).rejects.toMatchObject({
+      code: 'REMOTE_HTTP_ERROR',
+    });
+    await expect(fetcher.fetch('https://cdn.example.com/remote.mjs')).resolves.toBe('ready');
+    expect(calls).toBe(2);
+  });
+
+  it('reuses integrity-verified persistent entries after constructing a new fetcher', async () => {
+    const directory = await createCacheDirectory();
+    const source = 'export default "persistent"';
+    const integrity = `sha384-${createHash('sha384').update(source).digest('base64')}`;
+    let calls = 0;
+    const options = {
+      allowedOrigins: ['https://cdn.example.com'],
+      cache: { directory, ttlMs: 60_000, maxSizeBytes: 1024 },
+    };
+    const firstFetcher = new RemoteModuleFetcher({
+      ...options,
+      fetch: async () => {
+        calls += 1;
+        return new Response(source);
+      },
+    });
+    const secondFetcher = new RemoteModuleFetcher({
+      ...options,
+      fetch: async () => {
+        calls += 1;
+        throw new Error('a fresh network request was not expected');
+      },
+    });
+
+    await expect(firstFetcher.fetch('https://cdn.example.com/remote.mjs', integrity)).resolves.toBe(
+      source,
+    );
+    await expect(
+      secondFetcher.fetch('https://cdn.example.com/remote.mjs', integrity),
+    ).resolves.toBe(source);
+    expect(calls).toBe(1);
+  });
+
+  it('keeps persistent storage within its configured byte limit', async () => {
+    const directory = await createCacheDirectory();
+    const source = 'export default "x"';
+    const maxSizeBytes = Buffer.byteLength(source) * 2;
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      cache: { directory, ttlMs: 60_000, maxSizeBytes },
+      fetch: async () => new Response(source),
+    });
+
+    await fetcher.fetch('https://cdn.example.com/aaa.mjs');
+    await fetcher.fetch('https://cdn.example.com/bbb.mjs');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await fetcher.fetch('https://cdn.example.com/aaa.mjs');
+    await fetcher.fetch('https://cdn.example.com/ccc.mjs');
+
+    const records = (await readdir(directory)).filter((filename) => filename.endsWith('.json'));
+    expect(records).toHaveLength(2);
+  });
+
+  it('invalidates persistent entries by URL and clears the persistent cache', async () => {
+    const directory = await createCacheDirectory();
+    let calls = 0;
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      cache: { directory, ttlMs: 60_000, maxSizeBytes: 1024 },
+      fetch: async () => new Response(`source-${++calls}`),
+    });
+    const url = 'https://cdn.example.com/remote.mjs';
+
+    await fetcher.fetch(url);
+    await fetcher.invalidate(url);
+    await expect(fetcher.fetch(url)).resolves.toBe('source-2');
+    await fetcher.clear();
+    await expect(fetcher.fetch(url)).resolves.toBe('source-3');
+    expect(calls).toBe(3);
+  });
+
+  it('does not let an in-flight request repopulate or satisfy reads after invalidation', async () => {
+    const url = 'https://cdn.example.com/in-flight.mjs';
+    let calls = 0;
+    let markFirstRequestStarted: () => void = () => {};
+    let finishFirstRequest: () => void = () => {};
+    const firstRequestStarted = new Promise<void>((resolve) => {
+      markFirstRequestStarted = resolve;
+    });
+    const firstRequestGate = new Promise<void>((resolve) => {
+      finishFirstRequest = resolve;
+    });
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      fetch: async () => {
+        calls += 1;
+        if (calls === 1) {
+          markFirstRequestStarted();
+          await firstRequestGate;
+          return new Response('obsolete');
+        }
+        return new Response('current');
+      },
+    });
+
+    const firstRequest = fetcher.fetch(url);
+    await firstRequestStarted;
+    await fetcher.invalidate(url);
+    await expect(fetcher.fetch(url)).resolves.toBe('current');
+    finishFirstRequest();
+    await expect(firstRequest).resolves.toBe('obsolete');
+    await expect(fetcher.fetch(url)).resolves.toBe('current');
+    expect(calls).toBe(2);
+  });
+
+  it('serves stale entries only when opted in and refreshes them in the background', async () => {
+    const url = 'https://cdn.example.com/stale.mjs';
+    let calls = 0;
+    let finishRefresh: () => void = () => {};
+    let markRefreshStarted: () => void = () => {};
+    const refreshStarted = new Promise<void>((resolve) => {
+      markRefreshStarted = resolve;
+    });
+    const refreshGate = new Promise<void>((resolve) => {
+      finishRefresh = resolve;
+    });
+    const fetcher = new RemoteModuleFetcher({
+      allowedOrigins: ['https://cdn.example.com'],
+      cache: { ttlMs: 1, maxSizeBytes: 1024, staleWhileRevalidateMs: 60_000 },
+      fetch: async () => {
+        calls += 1;
+        if (calls > 1) {
+          markRefreshStarted();
+          await refreshGate;
+        }
+        return new Response(`source-${calls}`);
+      },
+    });
+
+    await expect(fetcher.fetch(url)).resolves.toBe('source-1');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await expect(fetcher.fetch(url)).resolves.toBe('source-1');
+    await refreshStarted;
+    expect(calls).toBe(2);
+    finishRefresh();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await expect(fetcher.fetch(url)).resolves.toBe('source-2');
+  });
+
+  it('rejects corrupted stale bytes that fail the active integrity check', async () => {
+    const directory = await createCacheDirectory();
+    const source = 'export default "verified"';
+    const integrity = `sha384-${createHash('sha384').update(source).digest('base64')}`;
+    let calls = 0;
+    const options = {
+      allowedOrigins: ['https://cdn.example.com'],
+      cache: { directory, ttlMs: 1, maxSizeBytes: 1024, staleWhileRevalidateMs: 60_000 },
+    };
+    const firstFetcher = new RemoteModuleFetcher({
+      ...options,
+      fetch: async () => new Response(source),
+    });
+    await firstFetcher.fetch('https://cdn.example.com/remote.mjs', integrity);
+
+    const cacheFile = (await readdir(directory)).find((filename) => filename.endsWith('.json'));
+    expect(cacheFile).toBeDefined();
+    const cachePath = join(directory, cacheFile!);
+    const record = JSON.parse(await readFile(cachePath, 'utf8')) as {
+      body: string;
+      storedAt: number;
+    };
+    record.body = Buffer.from('tampered source').toString('base64');
+    record.storedAt = Date.now() - 10;
+    await writeFile(cachePath, JSON.stringify(record));
+
+    const secondFetcher = new RemoteModuleFetcher({
+      ...options,
+      fetch: async () => {
+        calls += 1;
+        return new Response(source);
+      },
+    });
+    await expect(
+      secondFetcher.fetch('https://cdn.example.com/remote.mjs', integrity),
+    ).resolves.toBe(source);
+    expect(calls).toBe(1);
   });
 
   it('rejects origins outside the allowlist', async () => {

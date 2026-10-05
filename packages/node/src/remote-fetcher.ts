@@ -1,5 +1,16 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 
+import { RemoteModuleCache } from './remote-cache';
+import type { RemoteModuleCacheOptions } from './remote-cache';
+
+export type { RemoteModuleCacheOptions } from './remote-cache';
+
+interface InFlightRequest {
+  generation: number;
+  urlGeneration: number;
+  promise: Promise<Buffer>;
+}
+
 export type RemoteModuleErrorCode =
   | 'INVALID_REMOTE_INTEGRITY'
   | 'INVALID_REMOTE_URL'
@@ -14,6 +25,7 @@ export interface RemoteModuleFetcherOptions {
   allowedOrigins?: readonly string[];
   timeoutMs?: number;
   maxResponseBytes?: number;
+  cache?: RemoteModuleCacheOptions;
   fetch?: typeof globalThis.fetch;
 }
 
@@ -54,7 +66,10 @@ export class RemoteModuleFetcher {
   private readonly timeoutMs: number;
   private readonly maxResponseBytes: number;
   private readonly fetchImpl: typeof globalThis.fetch;
-  private readonly cache = new Map<string, Promise<string>>();
+  private readonly cache: RemoteModuleCache;
+  private readonly inFlight = new Map<string, InFlightRequest>();
+  private readonly generationsByUrl = new Map<string, number>();
+  private generation = 0;
 
   constructor(options: RemoteModuleFetcherOptions = {}) {
     this.allowedOrigins = new Set(
@@ -65,6 +80,7 @@ export class RemoteModuleFetcher {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
     this.fetchImpl = options.fetch ?? globalThis.fetch;
+    this.cache = new RemoteModuleCache(options.cache);
 
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) {
       throw new RangeError('timeoutMs must be a positive finite number.');
@@ -79,28 +95,81 @@ export class RemoteModuleFetcher {
     return this.cache.size;
   }
 
-  clear(): void {
-    this.cache.clear();
+  async clear(): Promise<void> {
+    this.generation += 1;
+    await this.cache.clear();
   }
 
   async fetch(url: string, integrity?: string): Promise<string> {
     const normalizedUrl = this.assertAllowedUrl(url);
     const integrityDigests = integrity === undefined ? undefined : parseIntegrity(integrity, url);
     const cacheKey = JSON.stringify([normalizedUrl, integrity ?? null]);
-    const cached = this.cache.get(cacheKey);
-    if (cached) {
-      return cached;
+    const validate = (bytes: Uint8Array) => {
+      if (bytes.byteLength > this.maxResponseBytes) {
+        throw this.createSizeError(normalizedUrl);
+      }
+      if (integrityDigests) verifyIntegrity(bytes, integrityDigests, normalizedUrl);
+    };
+    const generation = this.generation;
+    const urlGeneration = this.generationsByUrl.get(normalizedUrl) ?? 0;
+    const cached = await this.cache.get(cacheKey, normalizedUrl, integrity, validate);
+    const cacheWasInvalidated =
+      generation !== this.generation ||
+      urlGeneration !== (this.generationsByUrl.get(normalizedUrl) ?? 0);
+    if (cached && !cacheWasInvalidated) {
+      if (cached.stale) {
+        void this.startRequest(cacheKey, normalizedUrl, integrity, integrityDigests).catch(
+          () => {},
+        );
+      }
+      return new TextDecoder().decode(cached.bytes);
+    }
+    if (cacheWasInvalidated) {
+      await this.cache.invalidate(normalizedUrl, integrity);
     }
 
-    const request = this.fetchUncached(normalizedUrl, integrityDigests);
-    this.cache.set(cacheKey, request);
+    return new TextDecoder().decode(
+      await this.startRequest(cacheKey, normalizedUrl, integrity, integrityDigests),
+    );
+  }
 
-    return request.catch((error: unknown) => {
-      if (this.cache.get(cacheKey) === request) {
-        this.cache.delete(cacheKey);
+  async invalidate(url: string, integrity?: string): Promise<void> {
+    const normalizedUrl = this.assertAllowedUrl(url);
+    if (integrity !== undefined) parseIntegrity(integrity, url);
+    this.generationsByUrl.set(normalizedUrl, (this.generationsByUrl.get(normalizedUrl) ?? 0) + 1);
+    await this.cache.invalidate(normalizedUrl, integrity);
+  }
+
+  private startRequest(
+    cacheKey: string,
+    url: string,
+    integrity: string | undefined,
+    integrityDigests: IntegrityDigest[] | undefined,
+  ): Promise<Buffer> {
+    const pending = this.inFlight.get(cacheKey);
+    const generation = this.generation;
+    const urlGeneration = this.generationsByUrl.get(url) ?? 0;
+    if (pending && pending.generation === generation && pending.urlGeneration === urlGeneration) {
+      return pending.promise;
+    }
+
+    const request = this.fetchUncached(url, integrityDigests).then(async (bytes) => {
+      if (
+        generation === this.generation &&
+        urlGeneration === (this.generationsByUrl.get(url) ?? 0)
+      ) {
+        await this.cache.set(cacheKey, url, integrity, bytes);
       }
-      throw error;
+      return Buffer.from(bytes);
     });
+    const entry: InFlightRequest = { generation, urlGeneration, promise: request };
+    this.inFlight.set(cacheKey, entry);
+
+    const cleanup = () => {
+      if (this.inFlight.get(cacheKey) === entry) this.inFlight.delete(cacheKey);
+    };
+    void request.then(cleanup, cleanup);
+    return request;
   }
 
   private assertAllowedUrl(url: string): string {
@@ -132,7 +201,7 @@ export class RemoteModuleFetcher {
     return parsedUrl.href;
   }
 
-  private async fetchUncached(url: string, integrity?: IntegrityDigest[]): Promise<string> {
+  private async fetchUncached(url: string, integrity?: IntegrityDigest[]): Promise<Uint8Array> {
     const controller = new AbortController();
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -167,7 +236,7 @@ export class RemoteModuleFetcher {
       if (integrity) {
         verifyIntegrity(body, integrity, url);
       }
-      return new TextDecoder().decode(body);
+      return body;
     } catch (error) {
       if (error instanceof RemoteModuleError) {
         throw error;

@@ -18,6 +18,7 @@ import {
   RemoteModuleFetcher,
   createNodeResolver,
   registerNodeLoader,
+  type RemoteModuleCacheOptions,
   type NodeLoaderData,
   type NodeLoaderOptions,
   type RemoteModuleErrorCode,
@@ -53,7 +54,16 @@ const modulePreloadLinks: string = createModulePreloadLinks(manifest, ['@mfe/con
 const injectedScript: HTMLScriptElement = injectImportMap(document, manifest);
 const nodeResolver = createNodeResolver(manifest, { baseUrl: 'file:///consumer/' });
 const nodeUrl: string | undefined = nodeResolver('@mfe/consumer');
-const nodeOptions: NodeLoaderOptions = { allowedOrigins: ['https://cdn.example.com'] };
+const cacheOptions: RemoteModuleCacheOptions = {
+  directory: '/tmp/mfe-remote-cache',
+  ttlMs: 60_000,
+  maxSizeBytes: 16 * 1024 * 1024,
+  staleWhileRevalidateMs: 0,
+};
+const nodeOptions: NodeLoaderOptions = {
+  allowedOrigins: ['https://cdn.example.com'],
+  cache: cacheOptions,
+};
 const loaderData: NodeLoaderData = { manifest, options: nodeOptions };
 const fetcher = new RemoteModuleFetcher(nodeOptions);
 const verifiedModule: Promise<string> = fetcher.fetch(
@@ -120,6 +130,7 @@ void [
   nodeUrl,
   verifiedModule,
   integrityErrorCode,
+  cacheOptions,
   html,
   serverHtml,
   streamedHtml,

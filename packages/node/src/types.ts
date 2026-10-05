@@ -1,9 +1,12 @@
 import type { ManifestResolverOptions, RemoteManifest } from '@mfe-ssr/core';
 
+import type { RemoteModuleCacheOptions } from './remote-fetcher';
+
 export interface NodeLoaderOptions extends ManifestResolverOptions {
   allowedOrigins?: readonly string[];
   timeoutMs?: number;
   maxResponseBytes?: number;
+  cache?: RemoteModuleCacheOptions;
 }
 
 export interface NodeLoaderData {
