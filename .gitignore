@@ -1,3 +1,5 @@
 node_modules/
 dist/
 .context/
+playwright-report/
+test-results/

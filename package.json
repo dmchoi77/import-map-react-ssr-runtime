@@ -9,11 +9,13 @@
     "format:check": "oxfmt --check",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "pnpm build && playwright test",
     "start": "pnpm --filter @mfe-ssr/fixture-react-host start",
     "dev": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/react build && pnpm --parallel --filter @mfe-ssr/fixture-react-host --filter @mfe-ssr/fixture-react-remote run dev",
     "build": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/node build && pnpm --filter @mfe-ssr/react build && pnpm --filter @mfe-ssr/fixture-react-remote build && pnpm --filter @mfe-ssr/fixture-react-host build"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
