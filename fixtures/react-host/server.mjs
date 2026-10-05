@@ -13,7 +13,7 @@ import {
   createModulePreloadLinks,
   serializeImportMap,
 } from '@mfe-ssr/import-map';
-import { renderReactRemote, renderReactRemoteBySpecifierToStream } from '@mfe-ssr/react/server';
+import { renderReactRemoteBySpecifierToStream } from '@mfe-ssr/react/server';
 
 import { createClientManifest } from '../react-remote/manifest.mjs';
 
@@ -65,7 +65,11 @@ export function createFixtureMiddleware({
         return;
       }
 
-      if (requestUrl.pathname === '/' || requestUrl.pathname === '/failure') {
+      if (
+        requestUrl.pathname === '/' ||
+        requestUrl.pathname === '/failure' ||
+        requestUrl.pathname === '/composition-failure'
+      ) {
         const { HostApp } = await loadHostApp();
         const pageOptions = {
           loadRemote,
@@ -78,7 +82,13 @@ export function createFixtureMiddleware({
         const page =
           requestUrl.pathname === '/failure'
             ? await renderFailurePage(pageOptions)
-            : await renderHomePage(pageOptions);
+            : await renderHomePage({
+                ...pageOptions,
+                failureSpecifier:
+                  requestUrl.pathname === '/composition-failure'
+                    ? '@mfe/fixture/profile'
+                    : undefined,
+              });
         send(response, 200, 'text/html; charset=utf-8', page);
         return;
       }
@@ -165,25 +175,47 @@ async function renderHomePage({
   HostApp,
   bootstrapPath,
   clientPath,
+  failureSpecifier,
 }) {
-  const counterProps = { label: 'Counter', state: { count: 0 } };
-  const profileProps = { name: 'Ada Lovelace' };
-  const counter = await loadRemote('@mfe/fixture/counter');
-  const profile = await loadRemote('@mfe/fixture/profile');
-  const counterHtml = renderReactRemote({
-    specifier: '@mfe/fixture/counter',
-    remote: counter,
-    props: counterProps,
-    rootId: 'counter-root',
-    identifierPrefix: 'counter-',
-  });
-  const profileHtml = renderReactRemote({
-    specifier: '@mfe/fixture/profile',
-    remote: profile,
-    props: profileProps,
-    rootId: 'profile-root',
-    identifierPrefix: 'profile-',
-  });
+  const remotes = [
+    {
+      specifier: '@mfe/fixture/counter',
+      props: { label: 'Counter', state: { count: 0 } },
+      rootId: 'counter-root',
+      identifierPrefix: 'counter-',
+    },
+    {
+      specifier: '@mfe/fixture/profile',
+      props: { name: 'Ada Lovelace' },
+      rootId: 'profile-root',
+      identifierPrefix: 'profile-',
+    },
+  ];
+  const remoteResults = await Promise.all(
+    remotes.map(async (remoteOptions) => {
+      const chunks = [];
+      try {
+        const remoteStream = renderReactRemoteBySpecifierToStream({
+          ...remoteOptions,
+          fallback: 'Loading remote',
+          errorFallback: 'Remote unavailable',
+          loadRemote: async (specifier, { signal }) => {
+            if (specifier === failureSpecifier) {
+              throw new Error(`Fixture remote unavailable: ${specifier}`);
+            }
+            return loadRemote(specifier, { signal });
+          },
+        });
+        for await (const chunk of remoteStream) chunks.push(Buffer.from(chunk));
+        return { markup: Buffer.concat(chunks).toString(), shouldHydrate: true };
+      } catch {
+        return {
+          markup: renderRouteRemoteFallback(remoteOptions.rootId),
+          shouldHydrate: false,
+        };
+      }
+    }),
+  );
 
   return renderDocument({
     origin,
@@ -192,9 +224,15 @@ async function renderHomePage({
     HostApp,
     bootstrapPath,
     clientPath,
-    selectedRemoteSpecifiers: ['@mfe/fixture/counter', '@mfe/fixture/profile'],
-    body: [counterHtml, profileHtml].join(''),
+    selectedRemoteSpecifiers: remoteResults.flatMap((result, index) =>
+      result.shouldHydrate ? [remotes[index].specifier] : [],
+    ),
+    body: remoteResults.map(({ markup }) => markup).join(''),
   });
+}
+
+function renderRouteRemoteFallback(rootId) {
+  return `<div id="${escapeHtmlAttribute(rootId)}" data-mfe-route-fallback="server"><p>Remote unavailable</p></div>`;
 }
 
 async function renderFailurePage({
@@ -417,6 +455,18 @@ function createAbortError() {
 function send(response, status, contentType, body) {
   response.writeHead(status, { 'content-type': contentType });
   response.end(body);
+}
+
+function escapeHtmlAttribute(value) {
+  const replacements = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+
+  return value.replace(/[&<>"']/g, (character) => replacements[character]);
 }
 
 function listen(server, port, host) {

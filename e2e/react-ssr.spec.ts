@@ -102,6 +102,26 @@ test('hydrates independent remotes and keeps their SSR roots interactive', async
   expect(consoleErrors).toEqual([]);
 });
 
+test('isolates a failed route remote and hydrates its successful sibling', async ({ page }) => {
+  const response = await page.goto('/composition-failure');
+
+  expect(response?.status()).toBe(200);
+  const serverHtml = await response?.text();
+  expect(serverHtml).toContain('data-mfe-react-root="counter-root"');
+  expect(serverHtml?.replace(/<!--.*?-->/g, '')).toContain('Count: 0');
+  expect(serverHtml).toContain('data-mfe-fallback="server"');
+  expect([...serverHtml!.matchAll(/<script type="importmap">/g)]).toHaveLength(1);
+  expect([...serverHtml!.matchAll(/<link rel="modulepreload"/g)]).toHaveLength(2);
+  await page.waitForLoadState('networkidle');
+
+  await expect(page.locator('[data-mfe-react-root]')).toHaveCount(2);
+  await expect(page.locator('script[data-mfe-react-hydration]')).toHaveCount(2);
+  await expect(page.locator('#profile-root [data-remote="profile"]')).toContainText('Ada Lovelace');
+  const counterButton = page.locator('#counter-increment');
+  await counterButton.click();
+  await expect(counterButton).toHaveText('Count: 1');
+});
+
 test('composes nested remotes under one SSR root and hydrates child interactions', async ({
   page,
 }) => {

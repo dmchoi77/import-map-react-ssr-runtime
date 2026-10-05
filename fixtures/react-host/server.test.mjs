@@ -82,6 +82,92 @@ describe('React fixture host', () => {
     expect(importMap.imports['@mfe-ssr/import-map']).toBeUndefined();
   });
 
+  it('starts the remotes declared by a route concurrently', async () => {
+    const startedSpecifiers = new Set();
+    let markAllRemotesStarted = () => {};
+    const allRemotesStarted = new Promise((resolve) => {
+      markAllRemotesStarted = resolve;
+    });
+    let releaseLoads = () => {};
+    const loadGate = new Promise((resolve) => {
+      releaseLoads = resolve;
+    });
+    fixture = await createFixtureServer({
+      loadRemote: async (specifier) => {
+        startedSpecifiers.add(specifier);
+        if (startedSpecifiers.size === 2) markAllRemotesStarted();
+        await loadGate;
+        return import(remoteModules.get(specifier));
+      },
+    });
+
+    const responsePromise = fetch(`${fixture.origin}/`);
+    let timeout;
+    const startedConcurrently = await Promise.race([
+      allRemotesStarted.then(() => true),
+      new Promise((resolve) => {
+        timeout = setTimeout(() => resolve(false), 500);
+      }),
+    ]);
+    clearTimeout(timeout);
+    releaseLoads();
+    const response = await responsePromise;
+
+    expect(startedConcurrently).toBe(true);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('Ada Lovelace');
+  });
+
+  it('keeps successful route remotes when a sibling cannot be loaded', async () => {
+    fixture = await createFixtureServer({
+      loadRemote: async (specifier) => {
+        if (specifier === '@mfe/fixture/profile') {
+          throw new Error('profile fixture unavailable');
+        }
+        return import(remoteModules.get(specifier));
+      },
+    });
+
+    const response = await fetch(`${fixture.origin}/composition-failure`);
+    const html = await response.text();
+    const normalizedHtml = html.replace(/<!--.*?-->/g, '');
+
+    expect(response.status).toBe(200);
+    expect(html).toContain('data-mfe-react-root="counter-root"');
+    expect(normalizedHtml).toContain('Count: 0');
+    expect(html).toContain('data-mfe-react-root="profile-root"');
+    expect(html).toContain('Remote unavailable');
+    expect([...html.matchAll(/data-mfe-react-hydration=/g)]).toHaveLength(2);
+    expect([...html.matchAll(/<script type="importmap">/g)]).toHaveLength(1);
+    expect([...html.matchAll(/<link rel="modulepreload"/g)]).toHaveLength(2);
+  });
+
+  it('discards a failed remote render without losing sibling SSR output', async () => {
+    fixture = await createFixtureServer({
+      loadRemote: async (specifier) => {
+        if (specifier === '@mfe/fixture/profile') {
+          return {
+            default: () => {
+              throw new Error('profile render failed');
+            },
+          };
+        }
+        return import(remoteModules.get(specifier));
+      },
+    });
+
+    const response = await fetch(`${fixture.origin}/`);
+    const html = await response.text();
+    const normalizedHtml = html.replace(/<!--.*?-->/g, '');
+
+    expect(response.status).toBe(200);
+    expect(normalizedHtml).toContain('Count: 0');
+    expect(html).toContain('data-mfe-route-fallback="server"');
+    expect(html).toContain('id="profile-root"');
+    expect([...html.matchAll(/data-mfe-react-hydration=/g)]).toHaveLength(1);
+    expect([...html.matchAll(/<link rel="modulepreload"/g)]).toHaveLength(1);
+  });
+
   it('returns a fallback page when a remote cannot be loaded', async () => {
     fixture = await createFixtureServer({
       loadRemote: async () => {
