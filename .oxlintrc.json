@@ -3,5 +3,12 @@
   "categories": {
     "correctness": "error"
   },
-  "ignorePatterns": [".context/**", ".omx/**", "dist/**", "node_modules/**"]
+  "ignorePatterns": [
+    ".context/**",
+    ".omx/**",
+    ".next/**",
+    "dist/**",
+    "fixtures/next-host/next-env.d.ts",
+    "node_modules/**"
+  ]
 }

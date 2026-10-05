@@ -11,6 +11,7 @@ const packageDirectories = [
   ['@mfe-ssr/core', 'packages/core'],
   ['@mfe-ssr/import-map', 'packages/import-map'],
   ['@mfe-ssr/node', 'packages/node'],
+  ['@mfe-ssr/next', 'packages/next'],
 ];
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'mfe-package-consumer-'));
 
@@ -90,6 +91,7 @@ try {
 import * as core from '@mfe-ssr/core';
 import * as importMap from '@mfe-ssr/import-map';
 import * as nodeRuntime from '@mfe-ssr/node';
+import * as nextRuntime from '@mfe-ssr/next';
 
 const manifest = {
   imports: {
@@ -108,6 +110,27 @@ assert.equal(typeof nodeRuntime.checkRemoteHealth, 'function');
 assert.equal(typeof importMap.createBrowserImportMap, 'function');
 assert.equal(typeof importMap.serializeImportMap, 'function');
 assert.equal(typeof importMap.createModulePreloadLinks, 'function');
+assert.equal(typeof nextRuntime.withNextRemoteEntries, 'function');
+
+const nextConfig = nextRuntime.withNextRemoteEntries(
+  {},
+  {
+    entries: {
+      '@mfe/consumer': {
+        client: '/consumer.client.mjs',
+        server: '/consumer.server.mjs',
+      },
+    },
+  },
+);
+const nextWebpackConfig = await nextConfig.webpack(
+  { resolve: { alias: {} } },
+  { isServer: true },
+);
+assert.equal(
+  nextWebpackConfig.resolve.alias['@mfe/consumer$'],
+  '/consumer.server.mjs',
+);
 
 const browserMap = importMap.createBrowserImportMap(manifest);
 assert.equal(browserMap.imports['@mfe/consumer'], manifest.imports['@mfe/consumer'].client);

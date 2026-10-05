@@ -14,10 +14,17 @@
     "test:public-api-types": "pnpm build && node scripts/package-consumer-test.mjs --types-only",
     "test:e2e": "pnpm test:e2e:basic",
     "test:e2e:basic": "pnpm build:basic && playwright test --config=playwright.basic.config.ts",
+    "test:e2e:next": "pnpm build:next && playwright test --config=playwright.next.config.ts",
+    "test:e2e:next:turbopack": "pnpm build:next:turbopack && playwright test --config=playwright.next.config.ts",
     "start": "pnpm --filter @mfe-ssr/fixture-react-basic-host start",
+    "start:next": "pnpm --filter @mfe-ssr/fixture-next-host start",
     "dev": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/node build && pnpm --parallel --filter @mfe-ssr/fixture-react-basic-host --filter @mfe-ssr/fixture-react-basic-remote run dev",
+    "dev:next": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/fixture-next-host dev",
+    "dev:next:turbopack": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/fixture-next-host dev:turbopack",
     "build:basic": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/node build && pnpm --filter @mfe-ssr/fixture-react-basic-remote build && pnpm --filter @mfe-ssr/fixture-react-basic-host build",
-    "build": "pnpm build:basic"
+    "build:next": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/next build && pnpm --filter @mfe-ssr/fixture-react-basic-remote build && pnpm --filter @mfe-ssr/fixture-next-host build",
+    "build:next:turbopack": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/next build && pnpm --filter @mfe-ssr/fixture-react-basic-remote build && pnpm --filter @mfe-ssr/fixture-next-host build:turbopack",
+    "build": "pnpm build:basic && pnpm --filter @mfe-ssr/next build"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

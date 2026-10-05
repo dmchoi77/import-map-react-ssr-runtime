@@ -24,6 +24,11 @@ import {
   type RemoteModuleErrorCode,
 } from '@mfe-ssr/node';
 import { initialize, load, resolve } from '@mfe-ssr/node/loader';
+import {
+  withNextRemoteEntries,
+  type NextIntegrationOptions,
+  type NextRemoteEntry,
+} from '@mfe-ssr/next';
 
 const manifest = {
   imports: {
@@ -48,6 +53,12 @@ const modulePreloadLinks: string = createModulePreloadLinks(manifest, ['@mfe/con
 const injectedScript: HTMLScriptElement = injectImportMap(document, manifest);
 const nodeResolver = createNodeResolver(manifest, { baseUrl: 'file:///consumer/' });
 const nodeUrl: string | undefined = nodeResolver('@mfe/consumer');
+const nextEntry: NextRemoteEntry = {
+  client: 'https://cdn.example.com/consumer/client.mjs',
+  server: './remotes/consumer/server.mjs',
+};
+const nextOptions: NextIntegrationOptions = { entries: { '@mfe/consumer': nextEntry } };
+const nextConfig = withNextRemoteEntries({ reactStrictMode: true }, nextOptions);
 const cacheOptions: RemoteModuleCacheOptions = {
   directory: '/tmp/mfe-remote-cache',
   ttlMs: 60_000,
@@ -99,4 +110,5 @@ void [
   integrityErrorCode,
   cacheOptions,
   healthResults,
+  nextConfig,
 ];
