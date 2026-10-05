@@ -1,11 +1,11 @@
 import { defineConfig } from '@playwright/test';
 
 const host = '127.0.0.1';
-const port = 42173;
+const port = 42174;
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: '**/react-ssr.spec.ts',
+  testMatch: '**/basic-react-ssr.spec.ts',
   fullyParallel: false,
   reporter: 'list',
   use: {
@@ -15,7 +15,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'pnpm start:scenarios',
+    command: 'pnpm start',
     url: `http://${host}:${port}`,
     env: {
       HOST: host,

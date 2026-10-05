@@ -15,9 +15,13 @@
     "test:package-consumer": "pnpm build && node scripts/package-consumer-test.mjs",
     "test:public-api-types": "pnpm build && node scripts/package-consumer-test.mjs --types-only",
     "test:e2e": "pnpm build && playwright test",
-    "start": "pnpm --filter @mfe-ssr/fixture-react-host start",
-    "dev": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/react build && pnpm --parallel --filter @mfe-ssr/fixture-react-host --filter @mfe-ssr/fixture-react-remote run dev",
-    "build": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/node build && pnpm --filter @mfe-ssr/react build && pnpm --filter @mfe-ssr/fixture-react-remote build && pnpm --filter @mfe-ssr/fixture-react-host build"
+    "test:e2e:basic": "pnpm build:basic && playwright test --config=playwright.basic.config.ts",
+    "start": "pnpm --filter @mfe-ssr/fixture-react-basic-host start",
+    "start:scenarios": "pnpm --filter @mfe-ssr/fixture-react-host start",
+    "dev": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/react build && pnpm --parallel --filter @mfe-ssr/fixture-react-basic-host --filter @mfe-ssr/fixture-react-basic-remote run dev",
+    "dev:scenarios": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/react build && pnpm --parallel --filter @mfe-ssr/fixture-react-host --filter @mfe-ssr/fixture-react-remote run dev",
+    "build:basic": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/node build && pnpm --filter @mfe-ssr/react build && pnpm --filter @mfe-ssr/fixture-react-basic-remote build && pnpm --filter @mfe-ssr/fixture-react-basic-host build",
+    "build": "pnpm build:basic && pnpm --filter @mfe-ssr/fixture-react-remote build && pnpm --filter @mfe-ssr/fixture-react-host build"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
