@@ -102,6 +102,66 @@ test('hydrates independent remotes and keeps their SSR roots interactive', async
   expect(consoleErrors).toEqual([]);
 });
 
+test('composes nested remotes under one SSR root and hydrates child interactions', async ({
+  page,
+}) => {
+  const response = await page.goto('/nested');
+
+  expect(response?.status()).toBe(200);
+  await expect(page.locator('[data-mfe-react-root]')).toHaveCount(1);
+  await expect(page.locator('script[data-mfe-react-hydration]')).toHaveCount(1);
+  await expect(page.locator('#dashboard-root [data-remote="counter"]')).toContainText(
+    'Nested Counter',
+  );
+  await expect(page.locator('#dashboard-root [data-remote="profile"]')).toContainText(
+    'Ada Lovelace',
+  );
+  await page.waitForLoadState('networkidle');
+
+  const counterButton = page.locator('#counter-increment');
+  await expect(counterButton).toHaveText('Count: 3');
+  await counterButton.click();
+  await expect(counterButton).toHaveText('Count: 4');
+});
+
+test('contains a child remote load failure and keeps its sibling interactive', async ({ page }) => {
+  const response = await page.goto('/nested-child-failure');
+
+  expect(response?.status()).toBe(200);
+  const serverHtml = await response?.text();
+  expect(serverHtml).toContain('Ada Lovelace');
+  expect(serverHtml).not.toContain('data-mfe-child-fallback="profile"');
+  await expect(page.locator('[data-mfe-react-root]')).toHaveCount(1);
+  await expect(page.locator('#dashboard-root [data-mfe-child-fallback="profile"]')).toContainText(
+    'Profile unavailable',
+  );
+  await expect(page.locator('#dashboard-root [data-remote="counter"]')).toContainText(
+    'Nested Counter',
+  );
+  await page.waitForLoadState('networkidle');
+
+  const counterButton = page.locator('#counter-increment');
+  await counterButton.click();
+  await expect(counterButton).toHaveText('Count: 4');
+  expect(await page.locator('[data-mfe-react-root]').count()).toBe(1);
+});
+
+test('recovers from a parent remote SSR failure without creating another root', async ({
+  page,
+}) => {
+  const response = await page.goto('/nested-parent-failure');
+
+  expect(response?.status()).toBe(200);
+  const serverHtml = await response?.text();
+  expect(serverHtml).toContain('data-mfe-fallback="server"');
+  expect(serverHtml).toContain('Dashboard unavailable');
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('[data-mfe-react-root]')).toHaveCount(1);
+  await expect(page.locator('#dashboard-root [data-remote="profile"]')).toContainText(
+    'Ada Lovelace',
+  );
+});
+
 test('keeps the host available when a remote fails during SSR', async ({ page }) => {
   const response = await page.goto('/failure');
 

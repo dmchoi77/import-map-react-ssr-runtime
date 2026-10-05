@@ -13,6 +13,18 @@ const remoteOrigin =
 const remoteEntryPaths = new Map([
   ['@mfe/fixture/counter', '/fixtures/react-remote/src/counter.server.tsx'],
   ['@mfe/fixture/profile', '/fixtures/react-remote/src/profile.server.tsx'],
+  ['@mfe/fixture/dashboard', '/fixtures/react-remote/src/dashboard.server.tsx'],
+]);
+
+const nestedRemoteModules = new Map([
+  [
+    '@mfe/fixture/counter',
+    fileURLToPath(new URL('../react-remote/src/counter.server.tsx', import.meta.url)),
+  ],
+  [
+    '@mfe/fixture/profile',
+    fileURLToPath(new URL('../react-remote/src/profile.server.tsx', import.meta.url)),
+  ],
 ]);
 
 export default defineConfig({
@@ -21,6 +33,11 @@ export default defineConfig({
     useImportMapReactModules(),
     {
       name: 'fixture-host-ssr',
+      enforce: 'pre',
+      resolveId(source, _importer, options) {
+        if (!options?.ssr) return;
+        return nestedRemoteModules.get(source);
+      },
       configureServer(server) {
         server.middlewares.use(
           createFixtureMiddleware({

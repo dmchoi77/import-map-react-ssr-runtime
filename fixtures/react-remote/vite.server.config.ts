@@ -9,8 +9,9 @@ export default defineConfig({
       input: {
         'counter.server': 'src/counter.server.tsx',
         'profile.server': 'src/profile.server.tsx',
+        'dashboard.server': 'src/dashboard.server.tsx',
       },
-      external: ['react', 'react/jsx-runtime'],
+      external: ['react', 'react/jsx-runtime', '@mfe/fixture/counter', '@mfe/fixture/profile'],
       output: {
         entryFileNames: '[name].mjs',
         chunkFileNames: 'assets/[name]-[hash].mjs',

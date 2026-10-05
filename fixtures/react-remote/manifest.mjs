@@ -11,12 +11,19 @@ const entries = {
     server: './dist/server/profile.server.mjs',
     client: 'https://fixture.invalid/remote/profile.client.mjs',
   },
+  dashboard: {
+    id: '@mfe/fixture/dashboard',
+    version: '1.0.0',
+    server: './dist/server/dashboard.server.mjs',
+    client: 'https://fixture.invalid/remote/dashboard.client.mjs',
+  },
 };
 
 export const serverManifest = {
   imports: {
     '@mfe/fixture/counter': entries.counter,
     '@mfe/fixture/profile': entries.profile,
+    '@mfe/fixture/dashboard': entries.dashboard,
   },
 };
 
@@ -33,6 +40,10 @@ export function createClientManifest(
       '@mfe/fixture/profile': {
         ...entries.profile,
         client: new URL(clientPath('profile'), origin).href,
+      },
+      '@mfe/fixture/dashboard': {
+        ...entries.dashboard,
+        client: new URL(clientPath('dashboard'), origin).href,
       },
     },
   };

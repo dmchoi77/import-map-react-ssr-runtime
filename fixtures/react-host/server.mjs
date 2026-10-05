@@ -29,6 +29,26 @@ export function createFixtureMiddleware({
     const requestUrl = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
 
     try {
+      if (
+        requestUrl.pathname === '/nested' ||
+        requestUrl.pathname === '/nested-child-failure' ||
+        requestUrl.pathname === '/nested-parent-failure'
+      ) {
+        const { HostApp } = await loadHostApp();
+        await renderNestedPage({
+          response,
+          loadRemote,
+          origin: requestUrl.origin,
+          documentUrl: requestUrl.href,
+          HostApp,
+          bootstrapPath,
+          clientPath,
+          childFailure: requestUrl.pathname === '/nested-child-failure',
+          parentFailure: requestUrl.pathname === '/nested-parent-failure',
+        });
+        return;
+      }
+
       if (requestUrl.pathname === '/stream' || requestUrl.pathname === '/stream-failure') {
         const { HostApp } = await loadHostApp();
         await renderStreamPage({
@@ -257,6 +277,66 @@ async function renderStreamPage({
       throw error;
     }
 
+    yield renderDocumentEnd(bootstrapPath);
+  }
+
+  try {
+    await pipeline(Readable.from(documentChunks()), response);
+  } finally {
+    response.off('close', abortOnDisconnect);
+  }
+}
+
+async function renderNestedPage({
+  response,
+  loadRemote,
+  origin,
+  documentUrl,
+  HostApp,
+  bootstrapPath,
+  clientPath,
+  childFailure,
+  parentFailure,
+}) {
+  const controller = new AbortController();
+  const abortOnDisconnect = () => {
+    if (!response.writableEnded) controller.abort();
+  };
+  response.once('close', abortOnDisconnect);
+  response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+
+  const nestedClientPath = childFailure
+    ? (remoteName) => {
+        if (remoteName === 'profile') return '/remote/missing-profile.client.mjs';
+        return clientPath ? clientPath(remoteName) : `/remote/${remoteName}.client.mjs`;
+      }
+    : clientPath;
+
+  async function* documentChunks() {
+    yield renderDocumentStart({
+      origin,
+      documentUrl,
+      page: 'nested',
+      HostApp,
+      bootstrapPath,
+      clientPath: nestedClientPath,
+      selectedRemoteSpecifiers: ['@mfe/fixture/dashboard'],
+    });
+
+    const remoteStream = renderReactRemoteBySpecifierToStream({
+      specifier: '@mfe/fixture/dashboard',
+      props: { count: 3, profileName: 'Ada Lovelace' },
+      rootId: 'dashboard-root',
+      identifierPrefix: 'dashboard-',
+      fallback: 'Loading dashboard',
+      errorFallback: 'Dashboard unavailable',
+      signal: controller.signal,
+      loadRemote: async (specifier, { signal }) => {
+        if (parentFailure) throw new Error('dashboard server fixture unavailable');
+        return loadRemote(specifier, { signal });
+      },
+    });
+    for await (const chunk of remoteStream) yield chunk;
     yield renderDocumentEnd(bootstrapPath);
   }
 
