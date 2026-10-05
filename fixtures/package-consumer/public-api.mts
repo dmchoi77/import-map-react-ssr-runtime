@@ -1,0 +1,95 @@
+import '@mfe-ssr/react/bootstrap';
+
+import { createElement } from 'react';
+import {
+  ManifestError,
+  createManifestResolver,
+  type RemoteManifest,
+  validateManifest,
+} from '@mfe-ssr/core';
+import {
+  createBrowserImportMap,
+  createImportMapScript,
+  injectImportMap,
+  serializeImportMap,
+} from '@mfe-ssr/import-map';
+import {
+  createNodeResolver,
+  registerNodeLoader,
+  type NodeLoaderData,
+  type NodeLoaderOptions,
+} from '@mfe-ssr/node';
+import { initialize, load, resolve } from '@mfe-ssr/node/loader';
+import { renderReactRemote, type ReactRemoteModule } from '@mfe-ssr/react';
+import { renderReactRemote as renderReactRemoteFromServer } from '@mfe-ssr/react/server';
+
+const manifest = {
+  imports: {
+    '@mfe/consumer': {
+      id: '@mfe/consumer',
+      version: '1.0.0',
+      client: 'https://cdn.example.com/consumer/client.mjs',
+      server: './remotes/consumer/server.mjs',
+    },
+  },
+} satisfies RemoteManifest;
+
+validateManifest(manifest);
+const resolver = createManifestResolver(manifest, 'server');
+const serverUrl: string | undefined = resolver.resolve('@mfe/consumer');
+const importMap = createBrowserImportMap(manifest);
+const serializedMap: string = serializeImportMap(importMap);
+const importMapScript: string = createImportMapScript(manifest);
+const injectedScript: HTMLScriptElement = injectImportMap(document, manifest);
+const nodeResolver = createNodeResolver(manifest, { baseUrl: 'file:///consumer/' });
+const nodeUrl: string | undefined = nodeResolver('@mfe/consumer');
+const nodeOptions: NodeLoaderOptions = { allowedOrigins: ['https://cdn.example.com'] };
+const loaderData: NodeLoaderData = { manifest, options: nodeOptions };
+registerNodeLoader(manifest, nodeOptions);
+initialize(loaderData);
+void resolve(
+  '@mfe/consumer',
+  {
+    conditions: [],
+    importAttributes: {},
+    parentURL: 'file:///consumer/host.mjs',
+  },
+  async (specifier) => ({ url: specifier }),
+);
+void load(
+  'file:///consumer/remote.mjs',
+  { conditions: [], format: 'module', importAttributes: {} },
+  async (url) => ({ format: 'module', source: `export default ${JSON.stringify(url)}` }),
+);
+
+interface ConsumerProps {
+  count: number;
+}
+
+const remote: ReactRemoteModule<ConsumerProps> = {
+  default: ({ count }) => createElement('p', null, count),
+};
+const html: string = renderReactRemote({
+  specifier: '@mfe/consumer',
+  remote,
+  props: { count: 2 },
+});
+const serverHtml: string = renderReactRemoteFromServer({
+  specifier: '@mfe/consumer',
+  remote,
+  props: { count: 2 },
+});
+
+// @ts-expect-error React remote props are checked against the component contract.
+renderReactRemote({ specifier: '@mfe/consumer', remote, props: { name: 'wrong shape' } });
+
+void [
+  ManifestError,
+  serverUrl,
+  serializedMap,
+  importMapScript,
+  injectedScript,
+  nodeUrl,
+  html,
+  serverHtml,
+];
