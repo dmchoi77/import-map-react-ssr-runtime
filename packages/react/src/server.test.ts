@@ -2,7 +2,6 @@ import { createElement, useId } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { renderReactRemote } from './server';
-import { createReactRootMarker } from './types';
 import type { ReactRemoteModule } from './types';
 
 interface GreetingProps {
@@ -18,41 +17,30 @@ const remote: ReactRemoteModule<GreetingProps> = {
 };
 
 describe('renderReactRemote', () => {
-  it('defines a stable marker for the host-owned root container', () => {
-    expect(createReactRootMarker('greeting-root')).toEqual({
-      attribute: 'data-mfe-react-root',
-      value: 'greeting-root',
-    });
-  });
-
-  it('renders the remote default component to HTML', () => {
-    const result = renderReactRemote({
+  it('returns a self-describing root and serialized hydration contract', () => {
+    const markup = renderReactRemote({
+      specifier: '@mfe/greeting',
       remote,
       props: { name: 'Ada' },
       rootId: 'greeting-root',
     });
 
-    expect(result).toEqual({
-      html: '<p id="greeting">Hello Ada</p>',
-      rootId: 'greeting-root',
-      stateScript: undefined,
-    });
-  });
-
-  it('serializes optional state next to the rendered remote', () => {
-    const result = renderReactRemote({
-      remote,
-      props: { name: 'Ada' },
-      rootId: 'greeting-root',
-      state: { greeting: 'Hello Ada' },
-    });
-
-    expect(result.stateScript).toBe(
-      '<script type="application/json" data-mfe-state="greeting-root">{"greeting":"Hello Ada"}</script>',
+    expect(markup).toBe(
+      '<div id="greeting-root" data-mfe-react-root="greeting-root"><p id="greeting">Hello Ada</p></div><script type="application/json" data-mfe-react-hydration="greeting-root">{"specifier":"@mfe/greeting","props":{"name":"Ada"},"identifierPrefix":"greeting-root-"}</script>',
     );
   });
 
-  it('returns the identifierPrefix used to generate deterministic ids', () => {
+  it('generates a root id when the caller does not need to manage one', () => {
+    const markup = renderReactRemote({
+      specifier: '@mfe/greeting',
+      remote,
+      props: { name: 'Ada' },
+    });
+
+    expect(markup).toMatch(/id="mfe-react-\d+" data-mfe-react-root="mfe-react-\d+"/);
+  });
+
+  it('uses the identifier prefix from the SSR contract to render deterministic ids', () => {
     const idRemote: ReactRemoteModule = {
       default: () => {
         const id = useId();
@@ -60,30 +48,48 @@ describe('renderReactRemote', () => {
       },
     };
 
-    const result = renderReactRemote({
+    const markup = renderReactRemote({
+      specifier: '@mfe/with-id',
       remote: idRemote,
       props: {},
       rootId: 'id-root',
       identifierPrefix: 'greeting-',
     });
 
-    expect(result.identifierPrefix).toBe('greeting-');
-    expect(result.html).toContain('greeting-');
+    expect(markup).toContain('greeting-');
+    expect(markup).toContain('"identifierPrefix":"greeting-"');
   });
 
-  it('reports rendering and serialization failures through onError', () => {
-    const errors: unknown[] = [];
+  it('escapes the serialized props inside the hydration script', () => {
+    const markup = renderReactRemote({
+      specifier: '@mfe/greeting',
+      remote,
+      props: { name: '</script><script>alert(1)</script>' },
+      rootId: 'greeting-root',
+    });
 
+    expect(markup).not.toContain('</script><script>alert(1)</script>');
+    expect(markup).toContain('\\u003C/script\\u003E');
+  });
+
+  it('rejects invalid specifiers, root ids, and non-serializable props', () => {
+    expect(() =>
+      renderReactRemote({ specifier: ' ', remote, props: { name: 'Ada' }, rootId: 'root' }),
+    ).toThrowError(/specifier/);
     expect(() =>
       renderReactRemote({
+        specifier: '@mfe/greeting',
         remote,
         props: { name: 'Ada' },
-        rootId: 'greeting-root',
-        state: BigInt(1),
-        onError: (error) => errors.push(error),
+        rootId: ' ',
       }),
-    ).toThrowError(/State must be JSON serializable/);
-
-    expect(errors).toHaveLength(1);
+    ).toThrowError(/rootId/);
+    expect(() =>
+      renderReactRemote({
+        specifier: '@mfe/greeting',
+        remote: remote as ReactRemoteModule<object>,
+        props: { name: BigInt(1) } as unknown as GreetingProps,
+      }),
+    ).toThrowError(/JSON serializable/);
   });
 });

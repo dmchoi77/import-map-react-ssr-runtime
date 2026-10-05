@@ -6,6 +6,7 @@ export interface ReactRemoteMetadata {
 }
 
 export const REACT_ROOT_MARKER_ATTRIBUTE = 'data-mfe-react-root';
+export const REACT_HYDRATION_DATA_ATTRIBUTE = 'data-mfe-react-hydration';
 
 export interface ReactRootMarker {
   attribute: typeof REACT_ROOT_MARKER_ATTRIBUTE;
@@ -26,4 +27,10 @@ export function createReactRootMarker(rootId: string): ReactRootMarker {
 export interface ReactRemoteModule<Props extends object = Record<string, never>> {
   default: ComponentType<Props>;
   metadata?: ReactRemoteMetadata;
+}
+
+export interface ReactHydrationContract<Props extends object = Record<string, never>> {
+  specifier: string;
+  props: Props;
+  identifierPrefix: string;
 }

@@ -1,5 +1,5 @@
 {
-  "name": "@mfe-ssr/browser",
+  "name": "@mfe-ssr/import-map",
   "version": "0.0.0",
   "files": [
     "dist"

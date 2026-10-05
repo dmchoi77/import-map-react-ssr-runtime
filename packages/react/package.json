@@ -5,19 +5,17 @@
     "dist"
   ],
   "type": "module",
+  "sideEffects": [
+    "./dist/bootstrap.mjs"
+  ],
   "types": "./dist/index.d.mts",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs"
     },
-    "./client": {
-      "types": "./dist/client.d.mts",
-      "import": "./dist/client.mjs"
-    },
-    "./serialize": {
-      "types": "./dist/serialize.d.mts",
-      "import": "./dist/serialize.mjs"
+    "./bootstrap": {
+      "import": "./dist/bootstrap.mjs"
     },
     "./server": {
       "types": "./dist/server.d.mts",

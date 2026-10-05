@@ -1,14 +1,16 @@
-export type ReactStateSerializationErrorCode =
-  | 'STATE_NOT_SERIALIZABLE'
-  | 'INVALID_STATE_JSON'
+import type { ReactHydrationContract } from './types';
+
+export type ReactHydrationSerializationErrorCode =
+  | 'HYDRATION_DATA_NOT_SERIALIZABLE'
+  | 'INVALID_HYDRATION_DATA'
   | 'INVALID_ROOT_ID';
 
-export class ReactStateSerializationError extends Error {
-  readonly code: ReactStateSerializationErrorCode;
+export class ReactHydrationSerializationError extends Error {
+  readonly code: ReactHydrationSerializationErrorCode;
 
-  constructor(code: ReactStateSerializationErrorCode, message: string, options?: ErrorOptions) {
+  constructor(code: ReactHydrationSerializationErrorCode, message: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = 'ReactStateSerializationError';
+    this.name = 'ReactHydrationSerializationError';
     this.code = code;
   }
 }
@@ -29,44 +31,52 @@ const HTML_ATTRIBUTE_ESCAPE_SEQUENCES: Record<string, string> = {
   "'": '&#39;',
 };
 
-export function serializeState(state: unknown): string {
+export function serializeHydrationData(value: unknown): string {
   let serialized: string | undefined;
   try {
-    serialized = JSON.stringify(state);
+    serialized = JSON.stringify(value);
   } catch (cause) {
-    throw new ReactStateSerializationError(
-      'STATE_NOT_SERIALIZABLE',
-      'State must be JSON serializable.',
+    throw new ReactHydrationSerializationError(
+      'HYDRATION_DATA_NOT_SERIALIZABLE',
+      'Hydration data must be JSON serializable.',
       { cause },
     );
   }
 
   if (serialized === undefined) {
-    throw new ReactStateSerializationError(
-      'STATE_NOT_SERIALIZABLE',
-      'State must be JSON serializable.',
+    throw new ReactHydrationSerializationError(
+      'HYDRATION_DATA_NOT_SERIALIZABLE',
+      'Hydration data must be JSON serializable.',
     );
   }
 
   return escapeHtmlSensitiveCharacters(serialized);
 }
 
-export function deserializeState(serialized: string): unknown {
+export function deserializeHydrationData(serialized: string): unknown {
   try {
     return JSON.parse(serialized);
   } catch (cause) {
-    throw new ReactStateSerializationError('INVALID_STATE_JSON', 'State is not valid JSON.', {
-      cause,
-    });
+    throw new ReactHydrationSerializationError(
+      'INVALID_HYDRATION_DATA',
+      'Hydration data is not valid JSON.',
+      { cause },
+    );
   }
 }
 
-export function createStateScript(rootId: string, state: unknown): string {
+export function createHydrationScript<Props extends object>(
+  rootId: string,
+  contract: ReactHydrationContract<Props>,
+): string {
   if (typeof rootId !== 'string' || rootId.trim().length === 0) {
-    throw new ReactStateSerializationError('INVALID_ROOT_ID', 'rootId must be a non-empty string.');
+    throw new ReactHydrationSerializationError(
+      'INVALID_ROOT_ID',
+      'rootId must be a non-empty string.',
+    );
   }
 
-  return `<script type="application/json" data-mfe-state="${escapeHtmlAttribute(rootId)}">${serializeState(state)}</script>`;
+  return `<script type="application/json" data-mfe-react-hydration="${escapeHtmlAttribute(rootId)}">${serializeHydrationData(contract)}</script>`;
 }
 
 function escapeHtmlSensitiveCharacters(value: string): string {

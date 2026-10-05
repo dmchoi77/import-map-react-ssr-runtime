@@ -1,24 +1,5 @@
 import { toImportMap, type ImportMap, type RemoteManifest } from '@mfe-ssr/core';
 
-export type BrowserImportErrorCode = 'INVALID_SPECIFIER' | 'REMOTE_IMPORT_FAILED';
-
-export class BrowserImportError extends Error {
-  readonly code: BrowserImportErrorCode;
-  readonly specifier: string;
-
-  constructor(
-    code: BrowserImportErrorCode,
-    message: string,
-    specifier: string,
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-    this.name = 'BrowserImportError';
-    this.code = code;
-    this.specifier = specifier;
-  }
-}
-
 export function createBrowserImportMap(manifest: RemoteManifest): ImportMap {
   return toImportMap(manifest, 'client');
 }
@@ -60,25 +41,4 @@ export function injectImportMap(document: Document, manifest: RemoteManifest): H
   const reference = moduleScript?.parentElement === container ? moduleScript : container.firstChild;
   container.insertBefore(script, reference);
   return script;
-}
-
-export async function loadRemote<T = unknown>(specifier: string): Promise<T> {
-  if (typeof specifier !== 'string' || specifier.trim().length === 0) {
-    throw new BrowserImportError(
-      'INVALID_SPECIFIER',
-      'Remote module specifier must be a non-empty string.',
-      specifier,
-    );
-  }
-
-  try {
-    return (await import(specifier)) as T;
-  } catch (cause) {
-    throw new BrowserImportError(
-      'REMOTE_IMPORT_FAILED',
-      `Failed to import remote module "${specifier}".`,
-      specifier,
-      { cause },
-    );
-  }
 }

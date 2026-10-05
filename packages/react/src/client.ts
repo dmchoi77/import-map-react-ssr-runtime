@@ -1,46 +1,99 @@
 import { createElement } from 'react';
 import { hydrateRoot } from 'react-dom/client';
-import type { Root } from 'react-dom/client';
 
-import type { ReactRemoteModule } from './types';
+import { deserializeHydrationData } from './serialize';
+import { REACT_HYDRATION_DATA_ATTRIBUTE, REACT_ROOT_MARKER_ATTRIBUTE } from './types';
+import type { ReactHydrationContract, ReactRemoteModule } from './types';
 
-export interface ReactHydrationErrorInfo {
-  componentStack?: string;
-  errorBoundary?: unknown;
+const hydrationByRoot = new WeakMap<HTMLElement, Promise<void>>();
+
+export function hydrateReactRemotes(targetDocument?: Document): Promise<void> {
+  const documentToHydrate =
+    targetDocument ?? (typeof document === 'undefined' ? undefined : document);
+  if (!documentToHydrate) {
+    return Promise.resolve();
+  }
+
+  const roots = documentToHydrate.querySelectorAll<HTMLElement>(`[${REACT_ROOT_MARKER_ATTRIBUTE}]`);
+  return Promise.all(
+    Array.from(roots, (root) => hydrateRootFromContract(root, documentToHydrate)),
+  ).then(() => undefined);
 }
 
-export type ReactHydrationErrorHandler = (
-  error: unknown,
-  errorInfo: ReactHydrationErrorInfo,
-) => void;
+function hydrateRootFromContract(root: HTMLElement, documentToHydrate: Document): Promise<void> {
+  const existingHydration = hydrationByRoot.get(root);
+  if (existingHydration) {
+    return existingHydration;
+  }
 
-export interface HydrateReactRemoteOptions<Props extends object> {
-  remote: ReactRemoteModule<Props>;
-  root: Element | Document;
-  props: Props;
-  identifierPrefix?: string;
-  onCaughtError?: ReactHydrationErrorHandler;
-  onUncaughtError?: ReactHydrationErrorHandler;
-  onRecoverableError?: ReactHydrationErrorHandler;
+  const hydration = hydrateRootOnce(root, documentToHydrate);
+  hydrationByRoot.set(root, hydration);
+  return hydration;
 }
 
-export function hydrateReactRemote<Props extends object>(
-  options: HydrateReactRemoteOptions<Props>,
-): Root {
-  const hydrationOptions: Parameters<typeof hydrateRoot>[2] = {
-    ...(options.identifierPrefix === undefined
-      ? {}
-      : { identifierPrefix: options.identifierPrefix }),
-    ...(options.onCaughtError === undefined ? {} : { onCaughtError: options.onCaughtError }),
-    ...(options.onUncaughtError === undefined ? {} : { onUncaughtError: options.onUncaughtError }),
-    ...(options.onRecoverableError === undefined
-      ? {}
-      : { onRecoverableError: options.onRecoverableError }),
-  };
+async function hydrateRootOnce(root: HTMLElement, documentToHydrate: Document): Promise<void> {
+  const rootId = root.getAttribute(REACT_ROOT_MARKER_ATTRIBUTE);
 
-  return hydrateRoot(
-    options.root,
-    createElement(options.remote.default, options.props),
-    hydrationOptions,
+  try {
+    if (!rootId) {
+      throw new Error('Missing React root id.');
+    }
+
+    const hydrationScript = Array.from(
+      documentToHydrate.querySelectorAll<HTMLScriptElement>(
+        `script[type="application/json"][${REACT_HYDRATION_DATA_ATTRIBUTE}]`,
+      ),
+    ).find((script) => script.getAttribute(REACT_HYDRATION_DATA_ATTRIBUTE) === rootId);
+
+    if (!hydrationScript?.textContent) {
+      throw new Error(`Missing hydration contract for React root "${rootId}".`);
+    }
+
+    const contract = deserializeHydrationData(hydrationScript.textContent);
+    if (!isHydrationContract(contract)) {
+      throw new Error(`Invalid hydration contract for React root "${rootId}".`);
+    }
+
+    const remote = (await import(/* @vite-ignore */ contract.specifier)) as ReactRemoteModule<
+      Record<string, unknown>
+    >;
+    hydrateRoot(root, createElement(remote.default, contract.props), {
+      identifierPrefix: contract.identifierPrefix,
+      onRecoverableError(error) {
+        console.error(`React remote "${contract.specifier}" recovered during hydration.`, error);
+      },
+    });
+  } catch (error) {
+    renderClientFallback(root, documentToHydrate, error);
+  }
+}
+
+function isHydrationContract(
+  value: unknown,
+): value is ReactHydrationContract<Record<string, unknown>> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const contract = value as Record<string, unknown>;
+  return (
+    typeof contract.specifier === 'string' &&
+    contract.specifier.trim().length > 0 &&
+    typeof contract.props === 'object' &&
+    contract.props !== null &&
+    !Array.isArray(contract.props) &&
+    typeof contract.identifierPrefix === 'string'
   );
+}
+
+function renderClientFallback(
+  root: HTMLElement,
+  documentToHydrate: Document,
+  error: unknown,
+): void {
+  const message = documentToHydrate.createElement('p');
+  message.textContent = 'Remote unavailable';
+  root.replaceChildren(message);
+  root.dataset.mfeFallback = 'client';
+  console.error('Remote hydration failed.', error);
 }

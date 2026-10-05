@@ -4,8 +4,6 @@ import {
   createBrowserImportMap,
   createImportMapScript,
   injectImportMap,
-  BrowserImportError,
-  loadRemote,
   serializeImportMap,
 } from './index';
 import type { RemoteManifest } from '@mfe-ssr/core';
@@ -104,7 +102,7 @@ class FakeDocument {
   }
 }
 
-describe('createBrowserImportMap', () => {
+describe('import map generation', () => {
   it('creates a client import map from the remote manifest', () => {
     expect(createBrowserImportMap(manifest)).toEqual({
       imports: {
@@ -157,32 +155,5 @@ describe('injectImportMap', () => {
     expect(document.head.children).toEqual([importMapScript, moduleScript]);
     expect(importMapScript.type).toBe('importmap');
     expect(importMapScript.textContent).toBe(serializeImportMap(createBrowserImportMap(manifest)));
-  });
-});
-
-describe('loadRemote', () => {
-  it('loads a module through native dynamic import', async () => {
-    const remote = await loadRemote<{ default: string }>(
-      'data:text/javascript,export default "loaded"',
-    );
-
-    expect(remote.default).toBe('loaded');
-  });
-
-  it('rejects an empty specifier with a clear error', async () => {
-    await expect(loadRemote('')).rejects.toMatchObject({
-      code: 'INVALID_SPECIFIER',
-      name: 'BrowserImportError',
-    });
-  });
-
-  it('wraps native import failures with the requested specifier', async () => {
-    const error = await loadRemote('@mfe/missing').catch((error: unknown) => error);
-
-    expect(error).toBeInstanceOf(BrowserImportError);
-    expect(error).toMatchObject({
-      code: 'REMOTE_IMPORT_FAILED',
-      specifier: '@mfe/missing',
-    });
   });
 });

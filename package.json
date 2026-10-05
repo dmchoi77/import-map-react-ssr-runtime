@@ -9,7 +9,9 @@
     "format:check": "oxfmt --check",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/browser build && pnpm --filter @mfe-ssr/node build && pnpm --filter @mfe-ssr/react build"
+    "start": "pnpm --filter @mfe-ssr/fixture-react-host start",
+    "dev": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/react build && pnpm --parallel --filter @mfe-ssr/fixture-react-host --filter @mfe-ssr/fixture-react-remote run dev",
+    "build": "pnpm --filter @mfe-ssr/core build && pnpm --filter @mfe-ssr/import-map build && pnpm --filter @mfe-ssr/node build && pnpm --filter @mfe-ssr/react build && pnpm --filter @mfe-ssr/fixture-react-remote build && pnpm --filter @mfe-ssr/fixture-react-host build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

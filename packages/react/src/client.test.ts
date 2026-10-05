@@ -1,60 +1,103 @@
 // @vitest-environment happy-dom
 
-import { createElement } from 'react';
-import { describe, expect, it } from 'vitest';
+import { act } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-import { hydrateReactRemote } from './client';
-import type { ReactRemoteModule } from './types';
+import { hydrateReactRemotes } from './client';
 
-interface GreetingProps {
-  name: string;
-}
+const COUNTER_REMOTE_SPECIFIER = pathToFileURL(
+  resolve(process.cwd(), 'packages/react/src/fixtures/counter-remote.mjs'),
+).href;
+const MISSING_REMOTE_SPECIFIER = pathToFileURL(
+  resolve(process.cwd(), 'packages/react/src/fixtures/missing-remote.mjs'),
+).href;
 
-const remote: ReactRemoteModule<GreetingProps> = {
-  default: ({ name }) => createElement('p', null, `Hello ${name}`),
-};
+function appendRemoteRoot({
+  rootId = 'counter-root',
+  specifier = COUNTER_REMOTE_SPECIFIER,
+}: { rootId?: string; specifier?: string } = {}) {
+  const root = document.createElement('div');
+  root.id = rootId;
+  root.dataset.mfeReactRoot = rootId;
+  root.innerHTML = '<button id="counter-increment" type="button">Count: <!-- -->0</button>';
 
-describe('hydrateReactRemote', () => {
-  it('hydrates a remote component into an existing root', async () => {
-    const root = document.createElement('div');
-    root.innerHTML = '<p>Hello Ada</p>';
-    document.body.append(root);
-
-    const hydratedRoot = hydrateReactRemote({
-      remote,
-      root,
-      props: { name: 'Ada' },
-      identifierPrefix: 'greeting-',
-    });
-
-    expect(hydratedRoot).toEqual(
-      expect.objectContaining({
-        render: expect.any(Function),
-        unmount: expect.any(Function),
-      }),
-    );
-
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    hydratedRoot.unmount();
-    expect(root.innerHTML).toBe('');
+  const contract = document.createElement('script');
+  contract.type = 'application/json';
+  contract.dataset.mfeReactHydration = rootId;
+  contract.textContent = JSON.stringify({
+    specifier,
+    props: { initial: 0 },
+    identifierPrefix: `${rootId}-`,
   });
 
-  it('reports a server/client markup mismatch through onRecoverableError', async () => {
-    const root = document.createElement('div');
-    root.innerHTML = '<p>Hello Grace</p>';
-    document.body.append(root);
-    const errors: unknown[] = [];
+  document.body.append(root, contract);
+  return root;
+}
 
-    const hydratedRoot = hydrateReactRemote({
-      remote,
-      root,
-      props: { name: 'Ada' },
-      onRecoverableError: (error) => errors.push(error),
+describe('hydrateReactRemotes', () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+    (
+      globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('imports the contract specifier natively and hydrates its SSR root', async () => {
+    const root = appendRemoteRoot();
+
+    await act(async () => {
+      await hydrateReactRemotes(document);
     });
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(root.dataset.mfeFallback).toBeUndefined();
+    act(() => root.querySelector('button')?.click());
+    expect(root.textContent).toBe('Count: 1');
+  });
 
-    expect(errors).toHaveLength(1);
-    hydratedRoot.unmount();
+  it('shows a safe fallback when a remote module cannot be imported', async () => {
+    const root = appendRemoteRoot({ specifier: MISSING_REMOTE_SPECIFIER });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await hydrateReactRemotes(document);
+
+    expect(root.dataset.mfeFallback).toBe('client');
+    expect(root.textContent).toBe('Remote unavailable');
+    expect(consoleError).toHaveBeenCalledOnce();
+  });
+
+  it('shows a fallback for a malformed hydration contract without breaking other roots', async () => {
+    const root = appendRemoteRoot();
+    const healthyRoot = appendRemoteRoot({ rootId: 'healthy-root' });
+    const contract = document.querySelector<HTMLScriptElement>(
+      'script[data-mfe-react-hydration="counter-root"]',
+    );
+    contract!.textContent = '{invalid json';
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => {
+      await hydrateReactRemotes(document);
+    });
+
+    expect(root.dataset.mfeFallback).toBe('client');
+    expect(root.textContent).toBe('Remote unavailable');
+    expect(healthyRoot.dataset.mfeFallback).toBeUndefined();
+    expect(healthyRoot.textContent).toBe('Count: 0');
+  });
+
+  it('is idempotent when the bootstrap is evaluated more than once', async () => {
+    const root = appendRemoteRoot();
+
+    await act(async () => {
+      await Promise.all([hydrateReactRemotes(document), hydrateReactRemotes(document)]);
+    });
+
+    act(() => root.querySelector('button')?.click());
+    expect(root.textContent).toBe('Count: 1');
   });
 });
