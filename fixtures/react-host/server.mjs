@@ -9,7 +9,7 @@ import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 
 import { createBrowserImportMap, serializeImportMap } from '@mfe-ssr/import-map';
-import { renderReactRemote, renderReactRemoteToStream } from '@mfe-ssr/react/server';
+import { renderReactRemote, renderReactRemoteBySpecifierToStream } from '@mfe-ssr/react/server';
 
 import { createClientManifest } from '../react-remote/manifest.mjs';
 
@@ -205,27 +205,28 @@ async function renderStreamPage({
     });
 
     try {
-      if (streamRemoteDelayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, streamRemoteDelayMs));
-      }
-      if (controller.signal.aborted) throw createAbortError();
-
-      const remote = await loadRemote(failure ? '@mfe/fixture/missing' : '@mfe/fixture/counter', {
-        signal: controller.signal,
-      });
-      const remoteStream = renderReactRemoteToStream({
-        specifier: '@mfe/fixture/counter',
-        remote,
+      const specifier = failure ? '@mfe/fixture/missing' : '@mfe/fixture/counter';
+      const remoteStream = renderReactRemoteBySpecifierToStream({
+        specifier,
         props: { label: 'Counter', state: { count: 0 } },
         rootId: 'counter-root',
         identifierPrefix: 'counter-',
+        fallback: 'Loading remote',
+        errorFallback: 'Remote unavailable',
+        timeoutMs: Math.max(1_000, streamRemoteDelayMs + 1_000),
         signal: controller.signal,
+        loadRemote: async (remoteSpecifier, { signal }) => {
+          if (streamRemoteDelayMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, streamRemoteDelayMs));
+          }
+          if (signal?.aborted) throw createAbortError();
+          return loadRemote(remoteSpecifier, { signal });
+        },
       });
       for await (const chunk of remoteStream) yield chunk;
     } catch (error) {
       if (controller.signal.aborted) throw error;
-      if (!failure) throw error;
-      yield '<div id="stream-failure-root" data-mfe-fallback="server"><p>Remote unavailable</p></div>';
+      throw error;
     }
 
     yield renderDocumentEnd(bootstrapPath);

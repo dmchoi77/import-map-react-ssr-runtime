@@ -1,12 +1,18 @@
 import { PassThrough, Writable } from 'node:stream';
 import type { Readable } from 'node:stream';
 
-import { createElement } from 'react';
+import { createElement, lazy, Suspense } from 'react';
+import type { ComponentType } from 'react';
 import { renderToPipeableStream, renderToString } from 'react-dom/server';
 
 import { createHydrationScript } from './serialize';
+import { loadWithTimeout } from './load';
 import { createReactRootMarker } from './types';
-import type { ReactHydrationContract, ReactRemoteModule } from './types';
+import type {
+  ReactHydrationContract,
+  ReactRemoteModule,
+  ReactRemoteSuspenseContract,
+} from './types';
 
 export interface RenderReactRemoteOptions<Props extends object> {
   specifier: string;
@@ -22,6 +28,21 @@ export interface RenderReactRemoteStreamOptions<
   signal?: AbortSignal;
 }
 
+export interface RenderReactRemoteBySpecifierStreamOptions<Props extends object> {
+  specifier: string;
+  props: Props;
+  rootId?: string;
+  identifierPrefix?: string;
+  fallback?: string;
+  errorFallback?: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  loadRemote?: (
+    specifier: string,
+    options: { signal?: AbortSignal },
+  ) => Promise<ReactRemoteModule<Props>>;
+}
+
 let nextGeneratedRootId = 0;
 
 export function renderReactRemote<Props extends object>(
@@ -32,15 +53,72 @@ export function renderReactRemote<Props extends object>(
     identifierPrefix: prepared.identifierPrefix,
   });
 
-  return `${prepared.openingTag}${html}${prepared.closingMarkup}`;
+  return `${prepared.openingTag}${html}${prepared.createClosingMarkup()}`;
 }
 
 export function renderReactRemoteToStream<Props extends object>(
   options: RenderReactRemoteStreamOptions<Props>,
 ): Readable {
   const prepared = prepareReactRemote(options);
+  return renderPreparedReactRemoteToStream(prepared, options.signal);
+}
+
+export function renderReactRemoteBySpecifierToStream<Props extends object>(
+  options: RenderReactRemoteBySpecifierStreamOptions<Props>,
+): Readable {
+  const suspense: ReactRemoteSuspenseContract = {
+    fallback: options.fallback ?? 'Loading remote',
+    errorFallback: options.errorFallback ?? 'Remote unavailable',
+    timeoutMs: options.timeoutMs ?? 10_000,
+    serverFallback: false,
+  };
+  validateRemoteLoadOptions(options, suspense);
+
+  const Remote = lazy(async () => {
+    try {
+      const remote = await loadWithTimeout(
+        (signal) =>
+          options.loadRemote
+            ? options.loadRemote(options.specifier, { signal })
+            : (import(/* @vite-ignore */ options.specifier) as Promise<ReactRemoteModule<Props>>),
+        suspense.timeoutMs,
+        options.signal,
+      );
+      return { default: remote.default };
+    } catch {
+      suspense.serverFallback = true;
+      return {
+        default: (() =>
+          createElement(
+            'p',
+            { 'data-mfe-fallback': 'server' },
+            suspense.errorFallback,
+          )) as ComponentType<Props>,
+      };
+    }
+  });
+  const suspenseRemote: ReactRemoteModule<Props> = {
+    default: ((props: Props) =>
+      createElement(
+        Suspense,
+        { fallback: createElement('p', null, suspense.fallback) },
+        createElement(Remote, props),
+      )) as ComponentType<Props>,
+  };
+  const prepared = prepareReactRemote({
+    ...options,
+    remote: suspenseRemote,
+    suspense,
+  });
+
+  return renderPreparedReactRemoteToStream(prepared, options.signal);
+}
+
+function renderPreparedReactRemoteToStream(
+  prepared: PreparedReactRemote,
+  signal: AbortSignal | undefined,
+): Readable {
   const output = new PassThrough();
-  const signal = options.signal;
   let reactStream: ReturnType<typeof renderToPipeableStream> | undefined;
   let rootWritten = false;
   let finishedNormally = false;
@@ -82,7 +160,7 @@ export function renderReactRemoteToStream<Props extends object>(
     final(callback) {
       const finish = () => {
         finishedNormally = true;
-        output.end(prepared.closingMarkup);
+        output.end(prepared.createClosingMarkup());
         callback();
       };
 
@@ -137,11 +215,11 @@ interface PreparedReactRemote {
   element: ReturnType<typeof createElement>;
   identifierPrefix: string;
   openingTag: string;
-  closingMarkup: string;
+  createClosingMarkup: () => string;
 }
 
 function prepareReactRemote<Props extends object>(
-  options: RenderReactRemoteOptions<Props>,
+  options: RenderReactRemoteOptions<Props> & { suspense?: ReactRemoteSuspenseContract },
 ): PreparedReactRemote {
   if (typeof options.specifier !== 'string' || options.specifier.trim().length === 0) {
     throw new Error('specifier must be a non-empty string.');
@@ -157,14 +235,33 @@ function prepareReactRemote<Props extends object>(
     specifier: options.specifier,
     props: options.props,
     identifierPrefix,
+    ...(options.suspense ? { suspense: options.suspense } : {}),
   };
+
+  const createClosingMarkup = () => `</div>${createHydrationScript(rootId, contract)}`;
+  createClosingMarkup();
 
   return {
     element: createElement(options.remote.default, options.props),
     identifierPrefix,
     openingTag: `<div id="${escapeHtmlAttribute(rootId)}" ${marker.attribute}="${escapeHtmlAttribute(marker.value)}">`,
-    closingMarkup: `</div>${createHydrationScript(rootId, contract)}`,
+    createClosingMarkup,
   };
+}
+
+function validateRemoteLoadOptions<Props extends object>(
+  options: RenderReactRemoteBySpecifierStreamOptions<Props>,
+  suspense: ReactRemoteSuspenseContract,
+): void {
+  if (typeof options.specifier !== 'string' || options.specifier.trim().length === 0) {
+    throw new Error('specifier must be a non-empty string.');
+  }
+  if (options.props === null || typeof options.props !== 'object' || Array.isArray(options.props)) {
+    throw new Error('props must be an object.');
+  }
+  if (!Number.isFinite(suspense.timeoutMs) || suspense.timeoutMs <= 0) {
+    throw new Error('timeoutMs must be a positive finite number.');
+  }
 }
 
 function toError(reason: unknown): Error {

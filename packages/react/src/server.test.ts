@@ -1,9 +1,15 @@
 import { finished } from 'node:stream/promises';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { createElement, lazy, Suspense, useId } from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { renderReactRemote, renderReactRemoteToStream } from './server';
+import {
+  renderReactRemote,
+  renderReactRemoteBySpecifierToStream,
+  renderReactRemoteToStream,
+} from './server';
 import type { ReactRemoteModule } from './types';
 
 interface GreetingProps {
@@ -250,5 +256,144 @@ describe('renderReactRemoteToStream', () => {
     });
 
     await expect(finished(stream)).rejects.toThrow('remote render failed');
+  });
+});
+
+describe('renderReactRemoteBySpecifierToStream', () => {
+  it('does not start a remote loader if the request aborts before its first microtask', async () => {
+    const controller = new AbortController();
+    let loaderCalls = 0;
+    const stream = renderReactRemoteBySpecifierToStream<GreetingProps>({
+      specifier: '@mfe/aborted',
+      props: { name: 'Ada' },
+      signal: controller.signal,
+      loadRemote: () => {
+        loaderCalls += 1;
+        return new Promise<ReactRemoteModule<GreetingProps>>(() => {});
+      },
+    });
+    const completion = finished(stream);
+    controller.abort();
+
+    await expect(completion).rejects.toMatchObject({ name: 'AbortError' });
+    expect(loaderCalls).toBe(0);
+  });
+
+  it('uses native server module resolution when no custom loader is provided', async () => {
+    const specifier = pathToFileURL(
+      resolve(process.cwd(), 'packages/react/src/fixtures/counter-remote.mjs'),
+    ).href;
+    const stream = renderReactRemoteBySpecifierToStream({
+      specifier,
+      props: { initial: 7 },
+      rootId: 'native-import-root',
+    });
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    const markup = Buffer.concat(chunks).toString();
+
+    expect(markup).toContain('Count: 7');
+    expect(markup).toContain('"specifier":"file:');
+    expect(markup).toContain('"suspense":{"fallback":"Loading remote"');
+  });
+
+  it('streams a fallback while the adapter resolves a delayed remote by specifier', async () => {
+    const stream = renderReactRemoteBySpecifierToStream({
+      specifier: '@mfe/delayed',
+      props: { name: 'Ada' },
+      loadRemote: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        return remote;
+      },
+      fallback: 'Loading greeting',
+      errorFallback: 'Greeting unavailable',
+      timeoutMs: 1_000,
+      rootId: 'specifier-root',
+    });
+    let firstChunk = '';
+    const chunks: Buffer[] = [];
+    let markFallbackSent: () => void = () => {};
+    const fallbackSent = new Promise<void>((resolve) => {
+      markFallbackSent = resolve;
+    });
+    stream.on('data', (chunk: Buffer) => {
+      chunks.push(Buffer.from(chunk));
+      if (!firstChunk && chunk.toString().includes('Loading greeting')) {
+        firstChunk = chunk.toString();
+        markFallbackSent();
+      }
+    });
+    const completion = finished(stream);
+
+    await fallbackSent;
+    expect(firstChunk).toContain('Loading greeting');
+    expect(firstChunk).not.toContain('Hello Ada');
+
+    await completion;
+    const markup = Buffer.concat(chunks).toString();
+
+    expect(markup).toContain('Hello Ada');
+    expect(markup).toContain('"fallback":"Loading greeting"');
+    expect(markup).toContain('"errorFallback":"Greeting unavailable"');
+    expect(markup).toContain('"timeoutMs":1000');
+  });
+
+  it('finishes with the configured server fallback when the remote import rejects', async () => {
+    const stream = renderReactRemoteBySpecifierToStream({
+      specifier: '@mfe/rejected',
+      props: { name: 'Ada' },
+      loadRemote: async () => {
+        throw new Error('remote import rejected');
+      },
+      fallback: 'Loading greeting',
+      errorFallback: 'Greeting unavailable',
+      rootId: 'rejected-root',
+    });
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    const markup = Buffer.concat(chunks).toString();
+
+    expect(markup).toContain('Greeting unavailable');
+    expect(markup).toContain('data-mfe-react-root="rejected-root"');
+    expect(markup).toContain('"specifier":"@mfe/rejected"');
+    expect(markup).toContain('"errorFallback":"Greeting unavailable"');
+    expect(markup).toContain('"serverFallback":true');
+  });
+
+  it('times out a stalled remote load and still completes the fallback stream', async () => {
+    let loadSignal: AbortSignal | undefined;
+    let resolveLateRemote: (module: ReactRemoteModule<GreetingProps>) => void = () => {};
+    const lateRemote = new Promise<ReactRemoteModule<GreetingProps>>((resolve) => {
+      resolveLateRemote = resolve;
+    });
+    const stream = renderReactRemoteBySpecifierToStream<GreetingProps>({
+      specifier: '@mfe/stalled',
+      props: { name: 'Ada' },
+      loadRemote: (_specifier, { signal }) => {
+        loadSignal = signal;
+        return lateRemote;
+      },
+      fallback: 'Loading greeting',
+      errorFallback: 'Greeting timed out',
+      timeoutMs: 20,
+      rootId: 'timeout-root',
+    });
+
+    const startedAt = Date.now();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    const markup = Buffer.concat(chunks).toString();
+
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(markup).toContain('Greeting timed out');
+    expect(markup).toContain('"timeoutMs":20');
+    expect(markup).toContain('"errorFallback":"Greeting timed out"');
+    expect(markup).toContain('"serverFallback":true');
+    expect(loadSignal?.aborted).toBe(true);
+
+    resolveLateRemote(remote);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(markup).not.toContain('Hello Ada');
   });
 });

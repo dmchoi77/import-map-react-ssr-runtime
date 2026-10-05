@@ -86,12 +86,16 @@ describe('React fixture host', () => {
   });
 
   it('streams the host shell before a delayed remote resolves', async () => {
-    let resolveRemote;
-    const remoteModule = new Promise((resolve) => {
-      resolveRemote = resolve;
+    let markRemoteStarted;
+    const remoteStarted = new Promise((resolve) => {
+      markRemoteStarted = resolve;
     });
     fixture = await createFixtureServer({
-      loadRemote: () => remoteModule,
+      loadRemote: async () => {
+        markRemoteStarted();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return import(remoteModules.get('@mfe/fixture/counter'));
+      },
     });
 
     const response = await fetch(`${fixture.origin}/stream`);
@@ -106,8 +110,15 @@ describe('React fixture host', () => {
     }
 
     expect(html).toContain('SSR ready');
-    expect(html).not.toContain('data-mfe-react-root="counter-root"');
-    resolveRemote(await import(remoteModules.get('@mfe/fixture/counter')));
+    await remoteStarted;
+    while (!html.includes('Loading remote')) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      html += decoder.decode(value, { stream: true });
+    }
+    expect(html).toContain('data-mfe-react-root="counter-root"');
+    expect(html).toContain('Loading remote');
+    expect(html).not.toContain('Count: 0');
 
     while (true) {
       const { done, value } = await reader.read();
@@ -134,7 +145,25 @@ describe('React fixture host', () => {
 
     expect(response.status).toBe(200);
     expect(html).toContain('id="host-app-root"');
-    expect(html).toContain('data-mfe-fallback="server"');
+    expect(html).toContain('data-mfe-react-root="counter-root"');
+    expect(html).toContain('Remote unavailable');
+    expect(html).toContain('"errorFallback":"Remote unavailable"');
+    expect(html).toContain('"serverFallback":true');
+    expect(html).toContain('</html>');
+  });
+
+  it('finishes the HTTP response with a fallback when the remote loader times out', async () => {
+    fixture = await createFixtureServer({
+      loadRemote: () => new Promise(() => {}),
+    });
+
+    const startedAt = Date.now();
+    const response = await fetch(`${fixture.origin}/stream`);
+    const html = await response.text();
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(response.status).toBe(200);
+    expect(html).toContain('data-mfe-react-root="counter-root"');
     expect(html).toContain('Remote unavailable');
     expect(html).toContain('</html>');
   });

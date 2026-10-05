@@ -33,4 +33,12 @@ export interface ReactHydrationContract<Props extends object = Record<string, ne
   specifier: string;
   props: Props;
   identifierPrefix: string;
+  suspense?: ReactRemoteSuspenseContract;
+}
+
+export interface ReactRemoteSuspenseContract {
+  fallback: string;
+  errorFallback: string;
+  timeoutMs: number;
+  serverFallback: boolean;
 }

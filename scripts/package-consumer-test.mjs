@@ -124,6 +124,7 @@ assert.equal(typeof importMap.createBrowserImportMap, 'function');
 assert.equal(typeof importMap.serializeImportMap, 'function');
 assert.equal(reactRuntime.renderReactRemote, reactServer.renderReactRemote);
 assert.equal(typeof reactServer.renderReactRemoteToStream, 'function');
+assert.equal(typeof reactServer.renderReactRemoteBySpecifierToStream, 'function');
 
 const browserMap = importMap.createBrowserImportMap(manifest);
 assert.equal(browserMap.imports['@mfe/consumer'], manifest.imports['@mfe/consumer'].client);
@@ -155,6 +156,20 @@ for await (const chunk of reactServer.renderReactRemoteToStream({
 const streamedMarkup = Buffer.concat(streamedChunks).toString();
 assert.match(streamedMarkup, /Streamed consumer/);
 assert.match(streamedMarkup, /data-mfe-react-hydration="packed-stream-root"/);
+
+const specifier = 'data:text/javascript,' + encodeURIComponent('export default () => "Specifier consumer"');
+const specifierChunks = [];
+for await (const chunk of reactServer.renderReactRemoteBySpecifierToStream({
+  specifier,
+  props: {},
+  rootId: 'packed-specifier-root',
+  timeoutMs: 1000,
+})) {
+  specifierChunks.push(Buffer.from(chunk));
+}
+const specifierMarkup = Buffer.concat(specifierChunks).toString();
+assert.match(specifierMarkup, /Specifier consumer/);
+assert.match(specifierMarkup, /data-mfe-react-hydration="packed-specifier-root"/);
 
 await import('@mfe-ssr/react/bootstrap');
 console.log('Tarball consumer smoke passed.');

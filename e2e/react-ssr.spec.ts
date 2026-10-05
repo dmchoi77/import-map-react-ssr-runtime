@@ -14,6 +14,10 @@ test('renders remote content when JavaScript is disabled', async ({ browser }) =
 });
 
 test('streams remote markup and hydrates it in the browser', async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
   const response = await page.goto('/stream', { waitUntil: 'commit' });
 
   expect(response?.status()).toBe(200);
@@ -23,6 +27,8 @@ test('streams remote markup and hydrates it in the browser', async ({ page }) =>
   await page.waitForLoadState('networkidle');
   await counterButton.click();
   await expect(counterButton).toHaveText('Count: 1');
+  expect(await page.locator('#counter-root #counter-increment').count()).toBe(1);
+  expect(consoleErrors).toEqual([]);
 });
 
 test('streams and closes with the fallback when a remote cannot be loaded', async ({ page }) => {
@@ -30,7 +36,7 @@ test('streams and closes with the fallback when a remote cannot be loaded', asyn
 
   expect(response?.status()).toBe(200);
   await expect(page.locator('#host-status')).toHaveText('SSR ready');
-  await expect(page.locator('[data-mfe-fallback="server"]')).toContainText('Remote unavailable');
+  await expect(page.locator('#counter-root')).toContainText('Remote unavailable');
 });
 
 test('hydrates independent remotes and keeps their SSR roots interactive', async ({ page }) => {

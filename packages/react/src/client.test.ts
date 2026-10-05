@@ -1,11 +1,14 @@
 // @vitest-environment happy-dom
 
-import { act } from 'react';
+import { finished } from 'node:stream/promises';
+import { runInNewContext } from 'node:vm';
+import { act, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { hydrateReactRemotes } from './client';
+import { renderReactRemoteBySpecifierToStream } from './server';
 
 const COUNTER_REMOTE_SPECIFIER = pathToFileURL(
   resolve(
@@ -17,6 +20,9 @@ const COUNTER_REMOTE_SPECIFIER = pathToFileURL(
 ).href;
 const MISSING_REMOTE_SPECIFIER = pathToFileURL(
   resolve(process.cwd(), 'packages/react/src/fixtures/missing-remote.mjs'),
+).href;
+const STALLED_REMOTE_SPECIFIER = pathToFileURL(
+  resolve(process.cwd(), 'packages/react/src/fixtures/stalled-client-remote.mjs'),
 ).href;
 
 function appendRemoteRoot({
@@ -105,4 +111,109 @@ describe('hydrateReactRemotes', () => {
     act(() => root.querySelector('button')?.click());
     expect(root.textContent).toBe('Count: 1');
   });
+
+  it('mounts the browser remote over a server fallback without duplicate roots', async () => {
+    const specifier = COUNTER_REMOTE_SPECIFIER;
+    const serverStream = renderReactRemoteBySpecifierToStream({
+      specifier,
+      props: { initial: 0 },
+      loadRemote: async () => {
+        throw new Error('server import temporarily failed');
+      },
+      fallback: 'Loading remote',
+      errorFallback: 'Remote unavailable',
+      rootId: 'fallback-root',
+    });
+    const serverChunks: Buffer[] = [];
+    let fallbackWasStreamed = false;
+    serverStream.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      if (text.includes('Loading remote')) fallbackWasStreamed = true;
+      serverChunks.push(Buffer.from(chunk));
+    });
+    await finished(serverStream);
+    expect(fallbackWasStreamed).toBe(true);
+    setStreamedMarkup(Buffer.concat(serverChunks).toString());
+    const root = document.querySelector<HTMLElement>('#fallback-root')!;
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => {
+      await hydrateReactRemotes(document);
+    });
+
+    expect(root.querySelectorAll('#counter-increment')).toHaveLength(1);
+    expect(root.textContent).toBe('Count: 0');
+    expect(consoleError).not.toHaveBeenCalled();
+    act(() => root.querySelector('button')?.click());
+    expect(root.textContent).toBe('Count: 1');
+  });
+
+  it('renders the configured client fallback when the browser import rejects', async () => {
+    const suspense = {
+      fallback: 'Loading remote',
+      errorFallback: 'Remote unavailable',
+      timeoutMs: 1_000,
+    };
+    const serverStream = renderReactRemoteBySpecifierToStream({
+      specifier: MISSING_REMOTE_SPECIFIER,
+      props: { initial: 0 },
+      loadRemote: async () => ({
+        default: ({ initial }: { initial: number }) =>
+          createElement('button', { type: 'button' }, `Server count: ${initial}`),
+      }),
+      fallback: suspense.fallback,
+      errorFallback: suspense.errorFallback,
+      timeoutMs: suspense.timeoutMs,
+      rootId: 'client-reject-root',
+    });
+    const serverChunks: Buffer[] = [];
+    for await (const chunk of serverStream) serverChunks.push(Buffer.from(chunk));
+    setStreamedMarkup(Buffer.concat(serverChunks).toString());
+    const root = document.querySelector<HTMLElement>('#client-reject-root')!;
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => {
+      await hydrateReactRemotes(document);
+    });
+
+    expect(root.textContent, JSON.stringify(consoleError.mock.calls)).toBe('Remote unavailable');
+    expect(root.dataset.mfeFallback).toBe('client');
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  it('renders the configured client fallback when the browser import times out', async () => {
+    const serverStream = renderReactRemoteBySpecifierToStream({
+      specifier: STALLED_REMOTE_SPECIFIER,
+      props: { initial: 0 },
+      loadRemote: async () => ({
+        default: ({ initial }: { initial: number }) =>
+          createElement('button', { type: 'button' }, `Server count: ${initial}`),
+      }),
+      fallback: 'Loading remote',
+      errorFallback: 'Client import timed out',
+      timeoutMs: 20,
+      rootId: 'client-import-timeout-root',
+    });
+    const serverChunks: Buffer[] = [];
+    for await (const chunk of serverStream) serverChunks.push(Buffer.from(chunk));
+    setStreamedMarkup(Buffer.concat(serverChunks).toString());
+    const root = document.querySelector<HTMLElement>('#client-import-timeout-root')!;
+
+    await act(async () => {
+      await hydrateReactRemotes(document);
+    });
+
+    expect(root.textContent).toBe('Client import timed out');
+    expect(root.dataset.mfeFallback).toBe('client');
+  });
 });
+
+function setStreamedMarkup(markup: string): void {
+  document.body.innerHTML = markup;
+  for (const script of document.querySelectorAll<HTMLScriptElement>(
+    'script:not([type="application/json"])',
+  )) {
+    runInNewContext(script.textContent ?? '', { document, window });
+    script.remove();
+  }
+}
