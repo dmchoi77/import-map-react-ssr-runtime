@@ -1,41 +1,39 @@
 const counter = {
   id: '@mfe/basic/counter',
   version: '1.0.0',
-  client: 'https://fixture.invalid/remote/counter.client.mjs',
-  server: './dist/server/counter.server.mjs',
+  url: './dist/counter.mjs',
 };
 
 const badge = {
   id: '@mfe/basic/badge',
   version: '1.0.0',
-  client: 'https://fixture.invalid/remote/badge.client.mjs',
-  server: './dist/server/badge.server.mjs',
+  url: './dist/badge.mjs',
 };
 
-export const serverManifest = {
+export const manifest = {
   imports: {
     '@mfe/basic/counter': counter,
     '@mfe/basic/badge': badge,
   },
 };
 
-export function createClientManifest(
+export function createBrowserManifest(
   origin,
-  client = new URL('/remote/counter.client.mjs', origin).href,
-  badgeClient = new URL('/remote/badge.client.mjs', origin).href,
+  counterUrl = new URL('/remote/counter.mjs', origin).href,
+  badgeUrl = new URL('/remote/badge.mjs', origin).href,
 ) {
   return {
     imports: {
       '@mfe/basic/counter': {
         ...counter,
-        client,
+        url: counterUrl,
       },
       '@mfe/basic/badge': {
         ...badge,
-        client: badgeClient,
+        url: badgeUrl,
       },
     },
   };
 }
 
-export default serverManifest;
+export default manifest;

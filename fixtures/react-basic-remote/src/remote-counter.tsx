@@ -19,3 +19,6 @@ export function Counter({ initial = 0 }: CounterProps) {
     </section>
   );
 }
+
+export { Counter as RemoteApp };
+export default Counter;

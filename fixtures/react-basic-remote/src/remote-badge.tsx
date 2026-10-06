@@ -12,3 +12,6 @@ export function Badge() {
     </aside>
   );
 }
+
+export { Badge as RemoteApp };
+export default Badge;

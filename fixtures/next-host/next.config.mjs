@@ -5,12 +5,10 @@ import { withNextRemoteEntries } from '@mfe-ssr/next';
 const remoteRoot = new URL('../react-basic-remote/', import.meta.url);
 const remoteEntries = {
   counter: {
-    client: fileURLToPath(new URL('dist/client/counter.client.mjs', remoteRoot)),
-    server: fileURLToPath(new URL('dist/server/counter.server.mjs', remoteRoot)),
+    url: fileURLToPath(new URL('dist/counter.mjs', remoteRoot)),
   },
   badge: {
-    client: fileURLToPath(new URL('dist/client/badge.client.mjs', remoteRoot)),
-    server: fileURLToPath(new URL('dist/server/badge.server.mjs', remoteRoot)),
+    url: fileURLToPath(new URL('dist/badge.mjs', remoteRoot)),
   },
 };
 

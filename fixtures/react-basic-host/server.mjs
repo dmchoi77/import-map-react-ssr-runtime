@@ -11,13 +11,18 @@ import {
   createModulePreloadLinks,
   serializeImportMap,
 } from '@mfe-ssr/import-map';
-import { createClientManifest } from '../react-basic-remote/manifest.mjs';
+import { registerNodeLoader } from '@mfe-ssr/node';
+import remoteManifest, { createBrowserManifest } from '../react-basic-remote/manifest.mjs';
+
+registerNodeLoader(remoteManifest, {
+  baseUrl: new URL('../react-basic-remote/', import.meta.url).href,
+});
 
 const REMOTE_SPECIFIER = '@mfe/basic/counter';
 const REMOTE_SPECIFIERS = [REMOTE_SPECIFIER, '@mfe/basic/badge'];
 const DEFAULT_CLIENT_PATH = '/app/app.client.mjs';
-const DEFAULT_REMOTE_CLIENT_PATH = '/remote/counter.client.mjs';
-const DEFAULT_REMOTE_BADGE_CLIENT_PATH = '/remote/badge.client.mjs';
+const DEFAULT_REMOTE_CLIENT_PATH = '/remote/counter.mjs';
+const DEFAULT_REMOTE_BADGE_CLIENT_PATH = '/remote/badge.mjs';
 const DEFAULT_HOST_APP_MODULE = './dist/server/app.server.mjs';
 
 export function createBasicMiddleware({
@@ -95,7 +100,7 @@ async function createRuntimeFiles() {
   );
   await addDirectoryFiles(
     runtimeFiles,
-    new URL('../react-basic-remote/dist/client/', import.meta.url),
+    new URL('../react-basic-remote/dist/', import.meta.url),
     '/remote',
   );
   return runtimeFiles;
@@ -113,7 +118,7 @@ function renderDocument({ origin, documentUrl, body, clientPath, remoteClientPat
   const clientEntry = typeof clientPath === 'function' ? clientPath() : clientPath;
   const remoteEntries =
     typeof remoteClientPaths === 'function' ? remoteClientPaths() : remoteClientPaths;
-  const manifest = createClientManifest(
+  const manifest = createBrowserManifest(
     origin,
     new URL(remoteEntries[0], origin).href,
     new URL(remoteEntries[1], origin).href,

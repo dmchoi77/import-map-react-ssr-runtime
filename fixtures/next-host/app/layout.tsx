@@ -2,19 +2,17 @@ import type { ReactNode } from 'react';
 
 import { createBrowserImportMap, serializeImportMap } from '@mfe-ssr/import-map';
 
-const clientManifest = {
+const browserManifest = {
   imports: {
     '@mfe/basic/counter': {
       id: '@mfe/basic/counter',
       version: '1.0.0',
-      client: '/remote/counter.client.mjs',
-      server: '/remote/counter.server.mjs',
+      url: '/remote/counter.mjs',
     },
     '@mfe/basic/badge': {
       id: '@mfe/basic/badge',
       version: '1.0.0',
-      client: '/remote/badge.client.mjs',
-      server: '/remote/badge.server.mjs',
+      url: '/remote/badge.mjs',
     },
   },
 };
@@ -26,7 +24,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script
           type="importmap"
           dangerouslySetInnerHTML={{
-            __html: serializeImportMap(createBrowserImportMap(clientManifest)),
+            __html: serializeImportMap(createBrowserImportMap(browserManifest)),
           }}
         />
       </head>

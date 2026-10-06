@@ -43,8 +43,8 @@ describe('basic React fixture host', () => {
     expect(response.status).toBe(200);
     expect(html).toContain('Nested counter remote');
     expect(html).toContain('<script type="importmap">');
-    expect(html).toContain('/remote/counter.client.mjs');
-    expect(html).toContain('/remote/badge.client.mjs');
+    expect(html).toContain('/remote/counter.mjs');
+    expect(html).toContain('/remote/badge.mjs');
     expect(html).toContain('<div id="app-root"><p>Nested counter remote</p></div>');
     expect(html).toContain('<script type="module" src="/app/app.client.mjs"></script>');
     expect(html).not.toContain('data-mfe-react-root');
