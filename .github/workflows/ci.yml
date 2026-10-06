@@ -28,8 +28,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm format:check
+      - run: pnpm --filter @mfe-ssr/core build
       - run: pnpm exec tsc --noEmit
-      - run: pnpm test:react-matrix
+      - run: pnpm test
       - run: pnpm test:loader-integration
       - run: pnpm test:package-consumer
       - run: pnpm exec playwright install --with-deps chromium
