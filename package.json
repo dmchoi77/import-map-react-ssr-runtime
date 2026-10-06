@@ -32,7 +32,7 @@
     "happy-dom": "^16.8.0",
     "oxfmt": "^0.71.0",
     "oxlint": "^1.86.0",
-    "tsdown": "^0.23.0",
+    "tsdown": "0.21.0",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"
   },
