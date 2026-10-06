@@ -4,17 +4,15 @@ import { withNextRemoteEntries, type NextWebpackConfig, type NextTurbopackConfig
 
 const entries = {
   '@mfe/cart': {
-    client: 'remotes/cart.client.mjs',
-    server: 'remotes/cart.server.mjs',
+    url: 'remotes/cart.mjs',
   },
   '@mfe/ui/': {
-    client: 'remotes/ui/client/',
-    server: 'remotes/ui/server/',
+    url: 'remotes/ui/',
   },
 };
 
 describe('withNextRemoteEntries', () => {
-  it('adds exact server and client aliases while preserving existing aliases', () => {
+  it('adds the same Native ESM aliases to both builds while preserving existing aliases', () => {
     const config = withNextRemoteEntries(
       {
         reactStrictMode: true,
@@ -57,8 +55,8 @@ describe('withNextRemoteEntries', () => {
         alias: {
           fromNext: '/next.mjs',
           existing: '/existing.mjs',
-          '@mfe/cart$': 'remotes/cart.server.mjs',
-          '@mfe/ui/': 'remotes/ui/server/',
+          '@mfe/cart$': 'remotes/cart.mjs',
+          '@mfe/ui/': 'remotes/ui/',
         },
       },
     });
@@ -66,24 +64,24 @@ describe('withNextRemoteEntries', () => {
     expect(config.turbopack.resolveAlias).toEqual({
       existing: '/existing-turbopack.mjs',
       '@mfe/cart': {
-        browser: 'remotes/cart.client.mjs',
-        default: 'remotes/cart.server.mjs',
+        browser: 'remotes/cart.mjs',
+        default: 'remotes/cart.mjs',
       },
       '@mfe/ui/*': {
-        browser: 'remotes/ui/client/*',
-        default: 'remotes/ui/server/*',
+        browser: 'remotes/ui/*',
+        default: 'remotes/ui/*',
       },
     });
   });
 
-  it('uses client entries for the browser build', () => {
+  it('uses the same remote entries for the browser build', () => {
     const config = withNextRemoteEntries({}, { entries });
 
     const result = config.webpack({ resolve: { alias: {} } }, { isServer: false });
 
     expect(result.resolve?.alias).toEqual({
-      '@mfe/cart$': 'remotes/cart.client.mjs',
-      '@mfe/ui/': 'remotes/ui/client/',
+      '@mfe/cart$': 'remotes/cart.mjs',
+      '@mfe/ui/': 'remotes/ui/',
     });
   });
 
@@ -95,8 +93,7 @@ describe('withNextRemoteEntries', () => {
         turbopackRoot: '/workspace',
         entries: {
           '@mfe/cart': {
-            client: `${projectRoot}/remotes/cart.client.mjs`,
-            server: `${projectRoot}/remotes/cart.server.mjs`,
+            url: `${projectRoot}/remotes/cart.mjs`,
           },
         },
       },
@@ -106,8 +103,8 @@ describe('withNextRemoteEntries', () => {
       root: '/workspace',
       resolveAlias: {
         '@mfe/cart': {
-          browser: './remotes/cart.client.mjs',
-          default: './remotes/cart.server.mjs',
+          browser: './remotes/cart.mjs',
+          default: './remotes/cart.mjs',
         },
       },
     });

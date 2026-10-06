@@ -11,7 +11,7 @@ import type { NodeLoaderData } from './types';
 
 let resolveRemote: ReturnType<typeof createNodeResolver> | undefined;
 let fetcher: RemoteModuleFetcher | undefined;
-let integrityByServerUrl: ReadonlyMap<string, string> = new Map();
+let integrityByUrl: ReadonlyMap<string, string> = new Map();
 let onDiagnostic: DiagnosticHandler | undefined;
 
 export function initialize(data: NodeLoaderData): void {
@@ -40,11 +40,11 @@ export function initialize(data: NodeLoaderData): void {
       }
     },
   });
-  const nextIntegrityByServerUrl = createServerIntegrityMap(data.manifest, baseUrl);
+  const nextIntegrityByUrl = createRemoteIntegrityMap(data.manifest, baseUrl);
   const nextFetcher = new RemoteModuleFetcher({ ...options, onDiagnostic: diagnosticHandler });
 
   resolveRemote = nextResolver;
-  integrityByServerUrl = nextIntegrityByServerUrl;
+  integrityByUrl = nextIntegrityByUrl;
   fetcher = nextFetcher;
 }
 
@@ -100,12 +100,12 @@ export const load: LoadHook = async (url, context, nextLoad) => {
 
   return {
     format: 'module',
-    source: await fetcher.fetch(url, integrityByServerUrl.get(url)),
+    source: await fetcher.fetch(url, integrityByUrl.get(url)),
     shortCircuit: true,
   };
 };
 
-function createServerIntegrityMap(
+function createRemoteIntegrityMap(
   manifest: RemoteManifest,
   baseUrl: string,
 ): ReadonlyMap<string, string> {
@@ -116,17 +116,17 @@ function createServerIntegrityMap(
   ];
 
   for (const [specifier, entry] of mappings) {
-    const integrity = entry.integrity?.server;
+    const integrity = entry.integrity;
     if (!integrity || specifier.endsWith('/')) {
       continue;
     }
 
-    const url = new URL(entry.server, baseUrl).href;
+    const url = new URL(entry.url, baseUrl).href;
     const previousIntegrity = integrityByUrl.get(url);
     if (previousIntegrity && previousIntegrity !== integrity) {
       throw new RemoteModuleError(
         'INVALID_REMOTE_INTEGRITY',
-        `Conflicting server integrity metadata maps to "${url}".`,
+        `Conflicting remote integrity metadata maps to "${url}".`,
         url,
       );
     }

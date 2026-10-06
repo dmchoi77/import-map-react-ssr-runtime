@@ -19,18 +19,13 @@ const manifest: RemoteManifest = {
     '@mfe/cart': {
       id: '@mfe/cart',
       version: '1.0.0',
-      client: 'https://cdn.example.com/cart/client.js',
-      server: 'file:///srv/cart/server.js',
-      integrity: {
-        client: integrityFor('cart client'),
-        server: integrityFor('cart server'),
-      },
+      url: 'https://cdn.example.com/cart/remote.mjs',
+      integrity: integrityFor('cart'),
     },
     '@mfe/ui/': {
       id: '@mfe/ui',
       version: '2.0.0',
-      client: 'https://cdn.example.com/ui/',
-      server: 'file:///srv/ui/',
+      url: 'https://cdn.example.com/ui/',
     },
   },
   scopes: {
@@ -38,19 +33,15 @@ const manifest: RemoteManifest = {
       '@mfe/cart': {
         id: '@mfe/cart-checkout',
         version: '1.1.0',
-        client: 'https://cdn.example.com/cart-checkout/client.js',
-        server: 'file:///srv/cart-checkout/server.js',
-        integrity: {
-          client: integrityFor('checkout client'),
-          server: integrityFor('checkout server'),
-        },
+        url: 'https://cdn.example.com/cart-checkout/remote.mjs',
+        integrity: integrityFor('checkout'),
       },
     },
   },
 };
 
 describe('validateManifest', () => {
-  it('accepts a valid manifest', () => {
+  it('accepts a valid single-entry Native ESM manifest', () => {
     expect(() => validateManifest(manifest)).not.toThrow();
   });
 
@@ -58,21 +49,15 @@ describe('validateManifest', () => {
     expect(() =>
       validateManifest({
         imports: {},
-        scopes: {
-          './checkout/': {},
-        },
+        scopes: { './checkout/': {} },
       }),
     ).not.toThrow();
   });
 
   it('rejects an empty specifier', () => {
-    expect(() =>
-      validateManifest({
-        imports: {
-          '': manifest.imports['@mfe/cart'],
-        },
-      }),
-    ).toThrowError(ManifestError);
+    expect(() => validateManifest({ imports: { '': manifest.imports['@mfe/cart'] } })).toThrowError(
+      ManifestError,
+    );
   });
 
   it('rejects an invalid module URL', () => {
@@ -82,8 +67,7 @@ describe('validateManifest', () => {
           '@mfe/broken': {
             id: '@mfe/broken',
             version: '1.0.0',
-            client: 'not a URL',
-            server: 'file:///srv/broken.js',
+            url: 'not a URL',
           },
         },
       }),
@@ -97,7 +81,7 @@ describe('validateManifest', () => {
           '@mfe/a': manifest.imports['@mfe/cart'],
           '@mfe/b': {
             ...manifest.imports['@mfe/cart'],
-            client: 'https://cdn.example.com/other.js',
+            url: 'https://cdn.example.com/other.mjs',
           },
         },
       }),
@@ -110,7 +94,7 @@ describe('validateManifest', () => {
         imports: {
           '@mfe/ui/': {
             ...manifest.imports['@mfe/ui/'],
-            client: 'https://cdn.example.com/ui/index.js',
+            url: 'https://cdn.example.com/ui/index.mjs',
           },
         },
       }),
@@ -123,7 +107,7 @@ describe('validateManifest', () => {
         imports: {
           '@mfe/unsupported': {
             ...manifest.imports['@mfe/cart'],
-            integrity: { client: 'sha1-unsupported' },
+            integrity: 'sha1-unsupported',
           },
         },
       }),
@@ -131,15 +115,12 @@ describe('validateManifest', () => {
   });
 
   it('rejects malformed stronger integrity metadata instead of falling back to a weaker hash', () => {
-    const malformedSha512 = `sha512-${'A'.repeat(64)}`;
     expect(() =>
       validateManifest({
         imports: {
           '@mfe/malformed-integrity': {
             ...manifest.imports['@mfe/cart'],
-            integrity: {
-              client: `${integrityFor('valid client')} ${malformedSha512}`,
-            },
+            integrity: `${integrityFor('valid')} sha512-${'A'.repeat(64)}`,
           },
         },
       }),
@@ -155,7 +136,7 @@ describe('validateManifest', () => {
         imports: {
           '@mfe/base64url': {
             ...manifest.imports['@mfe/cart'],
-            integrity: { client: `sha384-${base64UrlDigest}` },
+            integrity: `sha384-${base64UrlDigest}`,
           },
         },
       }),
@@ -164,38 +145,20 @@ describe('validateManifest', () => {
 });
 
 describe('toImportMap', () => {
-  it('creates a browser import map with client URLs and integrity metadata', () => {
-    expect(toImportMap(manifest, 'client')).toEqual({
+  it('creates a browser import map from the same remote URL used by SSR', () => {
+    expect(toImportMap(manifest)).toEqual({
       imports: {
-        '@mfe/cart': 'https://cdn.example.com/cart/client.js',
+        '@mfe/cart': 'https://cdn.example.com/cart/remote.mjs',
         '@mfe/ui/': 'https://cdn.example.com/ui/',
       },
       scopes: {
         '/checkout/': {
-          '@mfe/cart': 'https://cdn.example.com/cart-checkout/client.js',
+          '@mfe/cart': 'https://cdn.example.com/cart-checkout/remote.mjs',
         },
       },
       integrity: {
-        'https://cdn.example.com/cart/client.js': integrityFor('cart client'),
-        'https://cdn.example.com/cart-checkout/client.js': integrityFor('checkout client'),
-      },
-    });
-  });
-
-  it('creates a server import map with server URLs', () => {
-    expect(toImportMap(manifest, 'server')).toEqual({
-      imports: {
-        '@mfe/cart': 'file:///srv/cart/server.js',
-        '@mfe/ui/': 'file:///srv/ui/',
-      },
-      scopes: {
-        '/checkout/': {
-          '@mfe/cart': 'file:///srv/cart-checkout/server.js',
-        },
-      },
-      integrity: {
-        'file:///srv/cart/server.js': integrityFor('cart server'),
-        'file:///srv/cart-checkout/server.js': integrityFor('checkout server'),
+        'https://cdn.example.com/cart/remote.mjs': integrityFor('cart'),
+        'https://cdn.example.com/cart-checkout/remote.mjs': integrityFor('checkout'),
       },
     });
   });
@@ -208,57 +171,77 @@ describe('toImportMap', () => {
         '@mfe/second': {
           ...first,
           id: '@mfe/second',
-          integrity: {
-            client: integrityFor('conflicting client'),
-            server: integrityFor('cart server'),
-          },
+          integrity: integrityFor('conflicting'),
         },
       },
     };
 
-    expect(() => toImportMap(conflictingManifest, 'client')).toThrowError(
+    expect(() => toImportMap(conflictingManifest)).toThrowError(
       expect.objectContaining({ code: 'CONFLICTING_ENTRY' }),
     );
   });
 });
 
 describe('createManifestResolver', () => {
-  it('rejects a file base URL for the client target', () => {
+  it('allows a file base URL for a server host', () => {
     expect(() =>
-      createManifestResolver(manifest, 'client', {
-        baseUrl: 'file:///srv/app/',
-      }),
-    ).toThrowError(ManifestError);
+      createManifestResolver(
+        {
+          imports: {
+            '@mfe/cart': {
+              id: '@mfe/cart',
+              version: '1.0.0',
+              url: './remote.mjs',
+            },
+          },
+        },
+        { baseUrl: 'file:///srv/app/' },
+      ),
+    ).not.toThrow();
   });
 
-  it('resolves exact and prefix imports for the selected target', () => {
-    const resolver = createManifestResolver(manifest, 'server');
+  it('resolves exact and prefix imports from the same URL contract', () => {
+    const resolver = createManifestResolver(
+      {
+        imports: {
+          '@mfe/cart': {
+            id: '@mfe/cart',
+            version: '1.0.0',
+            url: './cart/remote.mjs',
+          },
+          '@mfe/ui/': {
+            id: '@mfe/ui',
+            version: '1.0.0',
+            url: './ui/',
+          },
+        },
+      },
+      { baseUrl: 'file:///srv/app/' },
+    );
 
-    expect(resolver.resolve('@mfe/cart')).toBe('file:///srv/cart/server.js');
-    expect(resolver.resolve('@mfe/ui/button')).toBe('file:///srv/ui/button');
+    expect(resolver.resolve('@mfe/cart')).toBe('file:///srv/app/cart/remote.mjs');
+    expect(resolver.resolve('@mfe/ui/button')).toBe('file:///srv/app/ui/button');
     expect(resolver.resolve('@mfe/missing')).toBeUndefined();
   });
 
   it('uses the most specific matching scope before top-level imports', () => {
-    const resolver = createManifestResolver(manifest, 'client', {
-      baseUrl: 'https://app.example.com/',
-    });
+    const resolver = createManifestResolver(manifest, { baseUrl: 'https://app.example.com/' });
 
     expect(resolver.resolve('@mfe/cart', 'https://app.example.com/checkout/page')).toBe(
-      'https://cdn.example.com/cart-checkout/client.js',
+      'https://cdn.example.com/cart-checkout/remote.mjs',
     );
     expect(resolver.resolve('@mfe/cart', 'https://app.example.com/account/page')).toBe(
-      'https://cdn.example.com/cart/client.js',
+      'https://cdn.example.com/cart/remote.mjs',
     );
   });
 
   it('reports resolution outcomes without including the specifier or resolved URL', () => {
     const events: unknown[] = [];
-    const resolver = createManifestResolver(manifest, 'server', {
+    const resolver = createManifestResolver(manifest, {
       onDiagnostic: (event) => events.push(event),
     });
 
-    expect(resolver.resolve('@mfe/cart')).toBe('file:///srv/cart/server.js');
+    expect(resolver.resolve('@mfe/cart')).toBe('https://cdn.example.com/cart/remote.mjs');
     expect(resolver.resolve('@mfe/missing?token=private')).toBeUndefined();
 
     expect(events).toHaveLength(2);
@@ -271,12 +254,12 @@ describe('createManifestResolver', () => {
     });
     expect(events[1]).toMatchObject({ phase: 'resolve', outcome: 'unmatched' });
     expect(JSON.stringify(events)).not.toContain('token=private');
-    expect(JSON.stringify(events)).not.toContain('file:///srv/cart/server.js');
+    expect(JSON.stringify(events)).not.toContain('https://cdn.example.com/cart/remote.mjs');
   });
 
   it('reports a stable error code for invalid resolution without exposing the input', () => {
     const events: unknown[] = [];
-    const resolver = createManifestResolver(manifest, 'server', {
+    const resolver = createManifestResolver(manifest, {
       onDiagnostic: (event) => events.push(event),
     });
 
@@ -287,24 +270,24 @@ describe('createManifestResolver', () => {
   });
 
   it('does not let a diagnostic callback change resolver behavior', () => {
-    const resolver = createManifestResolver(manifest, 'server', {
+    const resolver = createManifestResolver(manifest, {
       onDiagnostic() {
         throw new Error('diagnostic sink failed');
       },
     });
 
-    expect(resolver.resolve('@mfe/cart')).toBe('file:///srv/cart/server.js');
+    expect(resolver.resolve('@mfe/cart')).toBe('https://cdn.example.com/cart/remote.mjs');
     expect(() => resolver.resolve('')).toThrowError(ManifestError);
   });
 
   it('ignores rejected promises from asynchronous diagnostic callbacks', async () => {
-    const resolver = createManifestResolver(manifest, 'server', {
+    const resolver = createManifestResolver(manifest, {
       onDiagnostic: async () => {
         throw new Error('diagnostic sink failed asynchronously');
       },
     });
 
-    expect(resolver.resolve('@mfe/cart')).toBe('file:///srv/cart/server.js');
+    expect(resolver.resolve('@mfe/cart')).toBe('https://cdn.example.com/cart/remote.mjs');
     await new Promise<void>((resolve) => setImmediate(resolve));
   });
 });

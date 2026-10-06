@@ -1,8 +1,8 @@
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 export interface NextRemoteEntry {
-  readonly client: string;
-  readonly server: string;
+  /** Native ESM module used by both the server bundle and the browser import map. */
+  readonly url: string;
 }
 
 export type NextRemoteEntries = Readonly<Record<string, NextRemoteEntry>>;
@@ -47,15 +47,13 @@ export interface NextTurbopackConfig {
 export type NextConfigLike = object;
 
 /**
- * Adds server/client aliases for remote entries to a Next.js configuration.
+ * Adds aliases for Native ESM remote entries to a Next.js configuration.
  *
- * Next bundles the same static import twice. The server build must point at a
- * remote's server entry, while the browser build must point at its client
- * entry. Exact aliases use webpack's `$` suffix so a remote such as
+ * Next bundles the same static import twice. Both builds point at the same
+ * framework-independent remote module. Exact aliases use webpack's `$` suffix so a remote such as
  * `@mfe/cart` does not accidentally capture `@mfe/cart/button`.
- * Turbopack receives the same mapping through `turbopack.resolveAlias` with
- * its browser condition selecting the client entry and the default condition
- * selecting the server entry.
+ * Turbopack receives the same mapping through `turbopack.resolveAlias` for
+ * both browser and server conditions.
  */
 export function withNextRemoteEntries<T extends NextConfigLike>(
   nextConfig: T,
@@ -76,11 +74,10 @@ export function withNextRemoteEntries<T extends NextConfigLike>(
     webpack(config, context) {
       const resolvedConfig = previousWebpack ? previousWebpack(config, context) : config;
       const aliases = resolvedConfig.resolve?.alias ?? {};
-      const target = context.isServer ? 'server' : 'client';
       const remoteAliases = Object.fromEntries(
         Object.entries(options.entries).map(([specifier, entry]) => [
           toWebpackAlias(specifier),
-          entry[target],
+          entry.url,
         ]),
       );
 
@@ -128,7 +125,7 @@ function getTurbopackRoot(
   if (typeof outputFileTracingRoot === 'string') return outputFileTracingRoot;
 
   const absoluteEntryPaths = Object.values(options.entries)
-    .flatMap((entry) => [entry.client, entry.server])
+    .map((entry) => entry.url)
     .filter(isAbsolute)
     .map((entryPath) => dirname(entryPath));
 
@@ -149,19 +146,18 @@ function toTurbopackTarget(
   specifier: string,
   entry: NextRemoteEntry,
 ): NextTurbopackConditionalAlias {
-  const client = toTurbopackPath(entry.client);
-  const server = toTurbopackPath(entry.server);
+  const target = toTurbopackPath(entry.url);
 
   if (specifier.endsWith('/')) {
     return {
-      browser: `${client.replace(/\/$/, '')}/*`,
-      default: `${server.replace(/\/$/, '')}/*`,
+      browser: `${target.replace(/\/$/, '')}/*`,
+      default: `${target.replace(/\/$/, '')}/*`,
     };
   }
 
   return {
-    browser: client,
-    default: server,
+    browser: target,
+    default: target,
   };
 }
 

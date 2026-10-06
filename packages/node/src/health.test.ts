@@ -27,14 +27,12 @@ describe('checkRemoteHealth', () => {
         '@mfe/catalog': {
           id: 'catalog',
           version: '1.0.0',
-          client: 'https://cdn.example.com/catalog.mjs?token=private',
-          server: 'https://user:password@cdn.example.com/catalog.mjs?token=private#fragment',
+          url: 'https://user:password@cdn.example.com/catalog.mjs?token=private#fragment',
         },
         '@mfe/catalog-alias': {
           id: 'catalog',
           version: '1.0.0',
-          client: 'https://cdn.example.com/catalog.mjs?token=private',
-          server: 'https://user:password@cdn.example.com/catalog.mjs?token=private#fragment',
+          url: 'https://user:password@cdn.example.com/catalog.mjs?token=private#fragment',
         },
       },
       scopes: {
@@ -42,8 +40,7 @@ describe('checkRemoteHealth', () => {
           '@mfe/catalog': {
             id: 'catalog',
             version: '1.0.0',
-            client: 'https://cdn.example.com/catalog.mjs?token=private',
-            server: 'https://user:password@cdn.example.com/catalog.mjs?token=private#fragment',
+            url: 'https://user:password@cdn.example.com/catalog.mjs?token=private#fragment',
           },
         },
       },
@@ -84,8 +81,7 @@ describe('checkRemoteHealth', () => {
           '@mfe/private': {
             id: 'private',
             version: '1.0.0',
-            client: 'https://private.example.com/client.mjs',
-            server: 'https://private.example.com/server.mjs',
+            url: 'https://private.example.com/remote.mjs',
           },
         },
       },
@@ -111,14 +107,12 @@ describe('checkRemoteHealth', () => {
           '@mfe/present': {
             id: 'present',
             version: '1.0.0',
-            client: 'https://cdn.example.com/present.mjs',
-            server: './remote.mjs',
+            url: './remote.mjs',
           },
           '@mfe/missing': {
             id: 'missing',
             version: '1.0.0',
-            client: 'https://cdn.example.com/missing.mjs',
-            server: './missing.mjs',
+            url: './missing.mjs',
           },
         },
       },
@@ -138,8 +132,7 @@ describe('checkRemoteHealth', () => {
           '@mfe/missing': {
             id: 'missing',
             version: '1.0.0',
-            client: 'https://cdn.example.com/client.mjs',
-            server: 'https://cdn.example.com/missing.mjs',
+            url: 'https://cdn.example.com/missing.mjs',
           },
         },
       },
@@ -165,8 +158,7 @@ describe('checkRemoteHealth', () => {
           '@mfe/stalled': {
             id: 'stalled',
             version: '1.0.0',
-            client: 'https://cdn.example.com/client.mjs',
-            server: 'https://cdn.example.com/stalled.mjs',
+            url: 'https://cdn.example.com/stalled.mjs',
           },
         },
       },

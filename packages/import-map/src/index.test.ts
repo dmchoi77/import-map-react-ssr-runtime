@@ -11,16 +11,15 @@ import {
 } from './index';
 import type { RemoteManifest } from '@mfe-ssr/core';
 
-const cartClientIntegrity = `sha384-${createHash('sha384').update('cart client').digest('base64')}`;
+const cartIntegrity = `sha384-${createHash('sha384').update('cart').digest('base64')}`;
 
 const manifest: RemoteManifest = {
   imports: {
     '@mfe/cart': {
       id: '@mfe/cart',
       version: '1.0.0',
-      client: 'https://cdn.example.com/cart/client.js',
-      server: 'file:///srv/cart/server.js',
-      integrity: { client: cartClientIntegrity },
+      url: 'https://cdn.example.com/cart/remote.mjs',
+      integrity: cartIntegrity,
     },
   },
   scopes: {
@@ -28,8 +27,7 @@ const manifest: RemoteManifest = {
       '@mfe/cart': {
         id: '@mfe/cart-checkout',
         version: '1.1.0',
-        client: 'https://cdn.example.com/cart-checkout/client.js',
-        server: 'file:///srv/cart-checkout/server.js',
+        url: 'https://cdn.example.com/cart-checkout/remote.mjs',
       },
     },
   },
@@ -109,17 +107,17 @@ class FakeDocument {
 }
 
 describe('import map generation', () => {
-  it('creates a client import map from the remote manifest', () => {
+  it('creates a browser import map from the remote manifest', () => {
     expect(createBrowserImportMap(manifest)).toEqual({
       imports: {
-        '@mfe/cart': 'https://cdn.example.com/cart/client.js',
+        '@mfe/cart': 'https://cdn.example.com/cart/remote.mjs',
       },
       integrity: {
-        'https://cdn.example.com/cart/client.js': cartClientIntegrity,
+        'https://cdn.example.com/cart/remote.mjs': cartIntegrity,
       },
       scopes: {
         '/checkout/': {
-          '@mfe/cart': 'https://cdn.example.com/cart-checkout/client.js',
+          '@mfe/cart': 'https://cdn.example.com/cart-checkout/remote.mjs',
         },
       },
     });
@@ -159,7 +157,7 @@ describe('createModulePreloadLinks', () => {
     });
 
     expect(links).toContain(
-      `<link rel="modulepreload" href="https://cdn.example.com/cart/client.js" crossorigin="anonymous" integrity="${cartClientIntegrity}">`,
+      `<link rel="modulepreload" href="https://cdn.example.com/cart/remote.mjs" crossorigin="anonymous" integrity="${cartIntegrity}">`,
     );
     expect(links.match(/rel="modulepreload"/g)).toHaveLength(1);
     expect(links).not.toContain('cart-checkout');
@@ -171,8 +169,8 @@ describe('createModulePreloadLinks', () => {
       parentUrl: 'https://app.example.com/checkout/entry.mjs',
     });
 
-    expect(links).toContain('https://cdn.example.com/cart-checkout/client.js');
-    expect(links).not.toContain('https://cdn.example.com/cart/client.js');
+    expect(links).toContain('https://cdn.example.com/cart-checkout/remote.mjs');
+    expect(links).not.toContain('https://cdn.example.com/cart/remote.mjs');
   });
 
   it('deduplicates selected aliases that resolve to one URL', () => {
@@ -193,15 +191,14 @@ describe('createModulePreloadLinks', () => {
     expect(links.match(/rel="modulepreload"/g)).toHaveLength(1);
   });
 
-  it('resolves relative client entries against the document URL', () => {
+  it('resolves relative remote entries against the document URL', () => {
     const relativeManifest: RemoteManifest = {
       imports: {
         '@mfe/relative': {
           id: '@mfe/relative',
           version: '1.0.0',
-          client: './assets/remote.mjs',
-          server: './remote.server.mjs',
-          integrity: { client: cartClientIntegrity },
+          url: './assets/remote.mjs',
+          integrity: cartIntegrity,
         },
       },
     };
@@ -211,7 +208,7 @@ describe('createModulePreloadLinks', () => {
     });
 
     expect(links).toContain('href="https://app.example.com/catalog/assets/remote.mjs"');
-    expect(links).toContain(`integrity="${cartClientIntegrity}"`);
+    expect(links).toContain(`integrity="${cartIntegrity}"`);
   });
 
   it('throws when a selected specifier is not mapped by the manifest', () => {
@@ -219,7 +216,7 @@ describe('createModulePreloadLinks', () => {
       createModulePreloadLinks(manifest, ['@mfe/missing'], {
         documentUrl: 'https://app.example.com/',
       }),
-    ).toThrow('No client manifest entry resolves selected remote "@mfe/missing".');
+    ).toThrow('No remote manifest entry resolves selected remote "@mfe/missing".');
   });
 });
 

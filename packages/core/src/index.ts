@@ -1,5 +1,3 @@
-export type ResolverTarget = 'client' | 'server';
-
 export type DiagnosticPhase = 'resolve' | 'fetch' | 'render' | 'hydrate' | 'health-check';
 
 export type DiagnosticOutcome = 'success' | 'failure' | 'unmatched';
@@ -48,12 +46,8 @@ export type ManifestErrorCode =
 export interface RemoteManifestEntry {
   id: string;
   version: string;
-  client: string;
-  server: string;
-  integrity?: {
-    client?: string;
-    server?: string;
-  };
+  url: string;
+  integrity?: string;
 }
 
 export interface RemoteManifest {
@@ -128,23 +122,20 @@ export function validateManifest(manifest: unknown): asserts manifest is RemoteM
   }
 }
 
-export function toImportMap(manifest: RemoteManifest, target: ResolverTarget): ImportMap {
+export function toImportMap(manifest: RemoteManifest): ImportMap {
   validateManifest(manifest);
 
   const importMap: ImportMap = {
-    imports: toUrlMappings(manifest.imports, target),
+    imports: toUrlMappings(manifest.imports),
   };
 
   if (manifest.scopes && Object.keys(manifest.scopes).length > 0) {
     importMap.scopes = Object.fromEntries(
-      Object.entries(manifest.scopes).map(([scope, mappings]) => [
-        scope,
-        toUrlMappings(mappings, target),
-      ]),
+      Object.entries(manifest.scopes).map(([scope, mappings]) => [scope, toUrlMappings(mappings)]),
     );
   }
 
-  const integrity = toIntegrityMappings(manifest, target);
+  const integrity = toIntegrityMappings(manifest);
   if (Object.keys(integrity).length > 0) {
     importMap.integrity = integrity;
   }
@@ -154,13 +145,12 @@ export function toImportMap(manifest: RemoteManifest, target: ResolverTarget): I
 
 export function createManifestResolver(
   manifest: RemoteManifest,
-  target: ResolverTarget,
   options: ManifestResolverOptions = {},
 ): ImportMapResolver {
   validateManifest(manifest);
 
   const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
-  assertAbsoluteUrl(baseUrl, 'baseUrl', target);
+  assertAbsoluteUrl(baseUrl, 'baseUrl');
 
   const scopes = Object.entries(manifest.scopes ?? {})
     .map(([scope, mappings]) => ({
@@ -185,8 +175,8 @@ export function createManifestResolver(
 
         const scopedMappings = findScopedMappings(scopes, parentUrl, baseUrl);
         const match =
-          (scopedMappings && resolveMapping(scopedMappings, specifier, target, baseUrl)) ??
-          resolveMapping(manifest.imports, specifier, target, baseUrl);
+          (scopedMappings && resolveMapping(scopedMappings, specifier, baseUrl)) ??
+          resolveMapping(manifest.imports, specifier, baseUrl);
 
         reportDiagnostic(options.onDiagnostic, {
           phase: 'resolve',
@@ -229,19 +219,18 @@ function validateMappings(
     const entry = rawEntry as Partial<RemoteManifestEntry>;
     validateEntry(entry, `${path}.${specifier}`);
 
-    if (specifier.endsWith('/') && (!entry.client.endsWith('/') || !entry.server.endsWith('/'))) {
+    if (specifier.endsWith('/') && !entry.url.endsWith('/')) {
       throw new ManifestError(
         'INVALID_URL',
-        'Prefix specifiers require both client and server addresses to end with /.',
+        'Prefix specifiers require the module URL to end with /.',
         `${path}.${specifier}`,
       );
     }
 
     const fingerprint = JSON.stringify({
       version: entry.version,
-      client: entry.client,
-      server: entry.server,
-      integrity: entry.integrity ?? {},
+      url: entry.url,
+      integrity: entry.integrity ?? null,
     });
     const previous = entriesById.get(entry.id);
 
@@ -269,30 +258,17 @@ function validateEntry(
     );
   }
 
-  assertModuleAddress(entry.client, `${path}.client`, 'client');
-  assertModuleAddress(entry.server, `${path}.server`, 'server');
+  assertModuleAddress(entry.url, `${path}.url`);
 
   if (entry.integrity !== undefined) {
-    if (!isRecord(entry.integrity)) {
+    if (!isNonEmptyString(entry.integrity)) {
       throw new ManifestError(
         'INVALID_MANIFEST',
-        'Integrity must be an object.',
+        'Integrity must be a non-empty string.',
         `${path}.integrity`,
       );
     }
-
-    for (const [key, value] of Object.entries(entry.integrity)) {
-      if (value !== undefined && !isNonEmptyString(value)) {
-        throw new ManifestError(
-          'INVALID_MANIFEST',
-          'Integrity values must be non-empty strings.',
-          `${path}.integrity.${key}`,
-        );
-      }
-      if (typeof value === 'string') {
-        validateIntegrityMetadata(value, `${path}.integrity.${key}`);
-      }
-    }
+    validateIntegrityMetadata(entry.integrity, `${path}.integrity`);
   }
 }
 
@@ -384,11 +360,7 @@ function validateScope(scope: string): void {
   }
 }
 
-function assertModuleAddress(
-  value: unknown,
-  path: string,
-  target: ResolverTarget,
-): asserts value is string {
+function assertModuleAddress(value: unknown, path: string): asserts value is string {
   if (!isNonEmptyString(value)) {
     throw new ManifestError('INVALID_URL', 'Module addresses must be non-empty strings.', path);
   }
@@ -404,51 +376,42 @@ function assertModuleAddress(
 
   if (isAbsoluteUrl(value)) {
     const protocol = new URL(value).protocol;
-    const allowedProtocols =
-      target === 'client' ? new Set(['http:', 'https:']) : new Set(['file:', 'http:', 'https:']);
+    const allowedProtocols = new Set(['file:', 'http:', 'https:']);
 
     if (!allowedProtocols.has(protocol)) {
       throw new ManifestError(
         'INVALID_URL',
-        `Protocol "${protocol}" is not allowed for ${target} module addresses.`,
+        `Protocol "${protocol}" is not allowed for module addresses.`,
         path,
       );
     }
   }
 }
 
-function assertAbsoluteUrl(
-  value: unknown,
-  path: string,
-  target: ResolverTarget,
-): asserts value is string {
+function assertAbsoluteUrl(value: unknown, path: string): asserts value is string {
   if (!isNonEmptyString(value) || !isAbsoluteUrl(value)) {
     throw new ManifestError('INVALID_URL', 'baseUrl must be an absolute URL.', path);
   }
 
   const protocol = new URL(value).protocol;
-  const allowedProtocols =
-    target === 'client' ? new Set(['http:', 'https:']) : new Set(['file:', 'http:', 'https:']);
+  const allowedProtocols = new Set(['file:', 'http:', 'https:']);
 
   if (!allowedProtocols.has(protocol)) {
     throw new ManifestError(
       'INVALID_URL',
-      `Protocol "${protocol}" is not allowed for ${target} baseUrl.`,
+      `Protocol "${protocol}" is not allowed for baseUrl.`,
       path,
     );
   }
 }
 
-function toUrlMappings(mappings: ManifestMapping, target: ResolverTarget): Record<string, string> {
+function toUrlMappings(mappings: ManifestMapping): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(mappings).map(([specifier, entry]) => [specifier, entry[target]]),
+    Object.entries(mappings).map(([specifier, entry]) => [specifier, entry.url]),
   );
 }
 
-function toIntegrityMappings(
-  manifest: RemoteManifest,
-  target: ResolverTarget,
-): Record<string, string> {
+function toIntegrityMappings(manifest: RemoteManifest): Record<string, string> {
   const result: Record<string, string> = {};
   const allMappings = [
     ...Object.entries(manifest.imports),
@@ -456,14 +419,14 @@ function toIntegrityMappings(
   ];
 
   for (const [specifier, entry] of allMappings) {
-    const integrity = entry.integrity?.[target];
+    const integrity = entry.integrity;
     if (integrity && !specifier.endsWith('/')) {
-      const address = entry[target];
+      const address = entry.url;
       const previousIntegrity = result[address];
       if (previousIntegrity && previousIntegrity !== integrity) {
         throw new ManifestError(
           'CONFLICTING_ENTRY',
-          `Conflicting ${target} integrity metadata maps to "${address}".`,
+          `Conflicting integrity metadata maps to "${address}".`,
           `integrity.${address}`,
         );
       }
@@ -494,12 +457,11 @@ function findScopedMappings(
 function resolveMapping(
   mappings: ManifestMapping,
   specifier: string,
-  target: ResolverTarget,
   baseUrl: string,
 ): { url: string; entry: RemoteManifestEntry } | undefined {
   const exactEntry = mappings[specifier];
   if (exactEntry) {
-    return { url: resolveAddress(exactEntry[target], baseUrl), entry: exactEntry };
+    return { url: resolveAddress(exactEntry.url, baseUrl), entry: exactEntry };
   }
 
   const prefix = Object.keys(mappings)
@@ -511,7 +473,7 @@ function resolveMapping(
   }
 
   const entry = mappings[prefix];
-  const address = resolveAddress(entry[target], baseUrl);
+  const address = resolveAddress(entry.url, baseUrl);
   return { url: new URL(specifier.slice(prefix.length), address).href, entry };
 }
 

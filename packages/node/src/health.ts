@@ -2,7 +2,7 @@ import { stat } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { createManifestResolver, reportDiagnostic } from '@mfe-ssr/core';
-import type { DiagnosticHandler, RemoteManifest, ResolverTarget } from '@mfe-ssr/core';
+import type { DiagnosticHandler, RemoteManifest } from '@mfe-ssr/core';
 
 export type RemoteHealthStatus = 'healthy' | 'unhealthy';
 
@@ -26,7 +26,6 @@ export interface RemoteHealthResult {
 }
 
 export interface RemoteHealthCheckOptions {
-  target?: ResolverTarget;
   baseUrl?: string;
   allowedOrigins?: readonly string[];
   timeoutMs?: number;
@@ -36,23 +35,20 @@ export interface RemoteHealthCheckOptions {
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_SERVER_BASE_URL = pathToFileURL(`${process.cwd()}/`).href;
-const DEFAULT_CLIENT_BASE_URL = 'https://mfe-health.invalid/';
 
 /** Checks unique manifest remotes without evaluating or downloading module source. */
 export async function checkRemoteHealth(
   manifest: RemoteManifest,
   options: RemoteHealthCheckOptions = {},
 ): Promise<RemoteHealthResult[]> {
-  const target = options.target ?? 'server';
-  const baseUrl =
-    options.baseUrl ?? (target === 'server' ? DEFAULT_SERVER_BASE_URL : DEFAULT_CLIENT_BASE_URL);
+  const baseUrl = options.baseUrl ?? DEFAULT_SERVER_BASE_URL;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new RangeError('timeoutMs must be a positive finite number.');
   }
 
-  // Reuse core validation for manifest shape and target-specific base URL constraints.
-  createManifestResolver(manifest, target, { baseUrl });
+  // Reuse core validation for manifest shape and module URL constraints.
+  createManifestResolver(manifest, { baseUrl });
 
   const allowedOrigins = new Set(
     (options.allowedOrigins ?? []).map((origin) => new URL(origin).origin),
@@ -71,7 +67,7 @@ export async function checkRemoteHealth(
       const startedAt = Date.now();
       let endpoint: string;
       try {
-        endpoint = new URL(entry[target], baseUrl).href;
+        endpoint = new URL(entry.url, baseUrl).href;
       } catch {
         return createResult(entry.id, 'unavailable', false, startedAt, {
           errorCode: 'INVALID_REMOTE_URL',

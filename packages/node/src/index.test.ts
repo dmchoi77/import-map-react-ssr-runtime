@@ -15,14 +15,12 @@ const manifest: RemoteManifest = {
     '@mfe/counter': {
       id: '@mfe/counter',
       version: '1.0.0',
-      client: 'https://cdn.example.com/counter/client.js',
-      server: './remotes/counter/server.mjs',
+      url: './remotes/counter/remote.mjs',
     },
     '@mfe/ui/': {
       id: '@mfe/ui',
       version: '1.0.0',
-      client: 'https://cdn.example.com/ui/',
-      server: './remotes/ui/',
+      url: './remotes/ui/',
     },
   },
 };
@@ -43,19 +41,19 @@ async function createCacheDirectory(): Promise<string> {
 }
 
 describe('createNodeResolver', () => {
-  it('resolves server entries from the manifest', () => {
+  it('resolves Native ESM entries from the manifest', () => {
     const resolve = createNodeResolver(manifest, {
       baseUrl: 'file:///srv/host/',
     });
 
-    expect(resolve('@mfe/counter')).toBe('file:///srv/host/remotes/counter/server.mjs');
+    expect(resolve('@mfe/counter')).toBe('file:///srv/host/remotes/counter/remote.mjs');
     expect(resolve('@mfe/ui/button')).toBe('file:///srv/host/remotes/ui/button');
     expect(resolve('@mfe/missing')).toBeUndefined();
   });
 });
 
 describe('Node loader hooks', () => {
-  it('resolves a mapped server specifier and short-circuits the hook chain', async () => {
+  it('resolves a mapped remote specifier and short-circuits the hook chain', async () => {
     initialize({
       manifest,
       options: {
@@ -76,7 +74,7 @@ describe('Node loader hooks', () => {
     );
 
     expect(result).toEqual({
-      url: 'file:///srv/host/remotes/counter/server.mjs',
+      url: 'file:///srv/host/remotes/counter/remote.mjs',
       shortCircuit: true,
     });
   });
@@ -137,11 +135,10 @@ describe('Node loader hooks', () => {
     expect(events[0]).not.toHaveProperty('specifier');
   });
 
-  it('rejects conflicting server integrity metadata for the same URL', () => {
+  it('rejects conflicting remote integrity metadata for the same URL', () => {
     const shared = {
       version: '1.0.0',
-      client: 'https://cdn.example.com/shared.mjs',
-      server: './shared.mjs',
+      url: './shared.mjs',
     };
 
     expect(() =>
@@ -151,16 +148,12 @@ describe('Node loader hooks', () => {
             '@mfe/first': {
               ...shared,
               id: '@mfe/first',
-              integrity: {
-                server: `sha384-${createHash('sha384').update('first').digest('base64')}`,
-              },
+              integrity: `sha384-${createHash('sha384').update('first').digest('base64')}`,
             },
             '@mfe/second': {
               ...shared,
               id: '@mfe/second',
-              integrity: {
-                server: `sha384-${createHash('sha384').update('second').digest('base64')}`,
-              },
+              integrity: `sha384-${createHash('sha384').update('second').digest('base64')}`,
             },
           },
         },

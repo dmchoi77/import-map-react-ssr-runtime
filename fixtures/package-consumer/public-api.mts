@@ -35,14 +35,13 @@ const manifest = {
     '@mfe/consumer': {
       id: '@mfe/consumer',
       version: '1.0.0',
-      client: 'https://cdn.example.com/consumer/client.mjs',
-      server: './remotes/consumer/server.mjs',
+      url: './remotes/consumer/remote.mjs',
     },
   },
 } satisfies RemoteManifest;
 
 validateManifest(manifest);
-const resolver = createManifestResolver(manifest, 'server');
+const resolver = createManifestResolver(manifest, { baseUrl: 'file:///consumer/' });
 const serverUrl: string | undefined = resolver.resolve('@mfe/consumer');
 const importMap = createBrowserImportMap(manifest);
 const serializedMap: string = serializeImportMap(importMap);
@@ -54,8 +53,7 @@ const injectedScript: HTMLScriptElement = injectImportMap(document, manifest);
 const nodeResolver = createNodeResolver(manifest, { baseUrl: 'file:///consumer/' });
 const nodeUrl: string | undefined = nodeResolver('@mfe/consumer');
 const nextEntry: NextRemoteEntry = {
-  client: 'https://cdn.example.com/consumer/client.mjs',
-  server: './remotes/consumer/server.mjs',
+  url: 'https://cdn.example.com/consumer/remote.mjs',
 };
 const nextOptions: NextIntegrationOptions = { entries: { '@mfe/consumer': nextEntry } };
 const nextConfig = withNextRemoteEntries({ reactStrictMode: true }, nextOptions);
@@ -73,7 +71,7 @@ const nodeOptions: NodeLoaderOptions = {
 const loaderData: NodeLoaderData = { manifest, options: nodeOptions };
 const fetcher = new RemoteModuleFetcher(nodeOptions);
 const verifiedModule: Promise<string> = fetcher.fetch(
-  'https://cdn.example.com/consumer/server.mjs',
+  'https://cdn.example.com/consumer/remote.mjs',
   'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
 );
 const integrityErrorCode: RemoteModuleErrorCode = 'REMOTE_INTEGRITY_MISMATCH';

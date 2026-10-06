@@ -69,6 +69,9 @@ importers:
       '@mfe-ssr/import-map':
         specifier: workspace:*
         version: link:../../packages/import-map
+      '@mfe-ssr/node':
+        specifier: workspace:*
+        version: link:../../packages/node
       react:
         specifier: ^19.0.0
         version: 19.3.0

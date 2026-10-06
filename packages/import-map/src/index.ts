@@ -13,7 +13,7 @@ export interface CreateModulePreloadLinksOptions {
 }
 
 export function createBrowserImportMap(manifest: RemoteManifest): ImportMap {
-  return toImportMap(manifest, 'client');
+  return toImportMap(manifest);
 }
 
 export function createModulePreloadLinks(
@@ -22,14 +22,14 @@ export function createModulePreloadLinks(
   options: CreateModulePreloadLinksOptions,
 ): string {
   const importMap = createBrowserImportMap(manifest);
-  const resolver = createManifestResolver(manifest, 'client', { baseUrl: options.documentUrl });
+  const resolver = createManifestResolver(manifest, { baseUrl: options.documentUrl });
   const integrityByUrl = new Map<string, string>();
 
   for (const [address, integrity] of Object.entries(importMap.integrity ?? {})) {
     const url = new URL(address, options.documentUrl).href;
     const previousIntegrity = integrityByUrl.get(url);
     if (previousIntegrity && previousIntegrity !== integrity) {
-      throw new Error(`Conflicting client integrity metadata maps to "${url}".`);
+      throw new Error(`Conflicting remote integrity metadata maps to "${url}".`);
     }
     integrityByUrl.set(url, integrity);
   }
@@ -38,7 +38,7 @@ export function createModulePreloadLinks(
   for (const specifier of selectedSpecifiers) {
     const url = resolver.resolve(specifier, options.parentUrl);
     if (!url) {
-      throw new Error(`No client manifest entry resolves selected remote "${specifier}".`);
+      throw new Error(`No remote manifest entry resolves selected remote "${specifier}".`);
     }
     if (linksByUrl.has(url)) continue;
 

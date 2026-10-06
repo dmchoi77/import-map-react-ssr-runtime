@@ -29,7 +29,7 @@ export function createNodeResolver(
   manifest: RemoteManifest,
   options: NodeResolverOptions = {},
 ): NodeResolver {
-  const resolver = createManifestResolver(manifest, 'server', {
+  const resolver = createManifestResolver(manifest, {
     ...options,
     baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
   });

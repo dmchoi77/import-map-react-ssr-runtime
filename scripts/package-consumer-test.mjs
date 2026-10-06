@@ -98,8 +98,7 @@ const manifest = {
     '@mfe/consumer': {
       id: '@mfe/consumer',
       version: '1.0.0',
-      client: 'https://cdn.example.com/consumer/client.mjs',
-      server: './remotes/consumer/server.mjs',
+      url: 'https://cdn.example.com/consumer/remote.mjs',
     },
   },
 };
@@ -117,8 +116,7 @@ const nextConfig = nextRuntime.withNextRemoteEntries(
   {
     entries: {
       '@mfe/consumer': {
-        client: '/consumer.client.mjs',
-        server: '/consumer.server.mjs',
+        url: '/consumer.mjs',
       },
     },
   },
@@ -129,22 +127,22 @@ const nextWebpackConfig = await nextConfig.webpack(
 );
 assert.equal(
   nextWebpackConfig.resolve.alias['@mfe/consumer$'],
-  '/consumer.server.mjs',
+  '/consumer.mjs',
 );
 
 const browserMap = importMap.createBrowserImportMap(manifest);
-assert.equal(browserMap.imports['@mfe/consumer'], manifest.imports['@mfe/consumer'].client);
+assert.equal(browserMap.imports['@mfe/consumer'], manifest.imports['@mfe/consumer'].url);
 assert.match(importMap.serializeImportMap(browserMap), /cdn\\.example\\.com/);
 const preloadLinks = importMap.createModulePreloadLinks(manifest, ['@mfe/consumer'], {
   documentUrl: 'https://consumer.example.com/',
 });
 assert.match(preloadLinks, /rel="modulepreload"/);
-assert.match(preloadLinks, /https:\\/\\/cdn\\.example\\.com\\/consumer\\/client\\.mjs/);
+assert.match(preloadLinks, /https:\\/\\/cdn\\.example\\.com\\/consumer\\/remote\\.mjs/);
 
 const resolveRemote = nodeRuntime.createNodeResolver(manifest, {
   baseUrl: 'file:///consumer/',
 });
-assert.equal(resolveRemote('@mfe/consumer'), 'file:///consumer/remotes/consumer/server.mjs');
+assert.equal(resolveRemote('@mfe/consumer'), 'https://cdn.example.com/consumer/remote.mjs');
 console.log('Tarball consumer smoke passed.');
 `,
     );
