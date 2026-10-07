@@ -21,14 +21,34 @@ export interface NextWebpackConfig {
 }
 
 export interface NextWebpackContext {
+  readonly dir: string;
+  readonly dev: boolean;
   readonly isServer: boolean;
+  readonly buildId: string;
+  /** Next.js keeps this config value intentionally open in its public type. */
+  readonly config: unknown;
+  readonly defaultLoaders: {
+    readonly babel: unknown;
+  };
+  readonly totalPages: number;
+  readonly webpack: unknown;
+  readonly nextRuntime?: 'nodejs' | 'edge';
   readonly [key: string]: unknown;
 }
 
-export type NextWebpackConfigFunction = (
-  config: NextWebpackConfig,
-  context: NextWebpackContext,
-) => NextWebpackConfig;
+type BivariantCallback<Arguments extends unknown[], Result> = {
+  bivarianceHack(...args: Arguments): Result;
+}['bivarianceHack'];
+
+/**
+ * Next.js declares its webpack callback with a more specific internal context type.
+ * Bivariant parameters keep that callback assignable while still contextual-typing
+ * callbacks written directly in a config passed to withNextRemoteEntries.
+ */
+export type NextWebpackConfigFunction = BivariantCallback<
+  [config: NextWebpackConfig, context: NextWebpackContext],
+  NextWebpackConfig
+>;
 
 export type NextTurbopackAlias = string | string[] | NextTurbopackConditionalAlias;
 
@@ -44,7 +64,19 @@ export interface NextTurbopackConfig {
   readonly [key: string]: unknown;
 }
 
-export type NextConfigLike = object;
+export interface NextConfigLike {
+  readonly webpack?: NextWebpackConfigFunction | null;
+  readonly turbopack?: unknown;
+  readonly [key: string]: unknown;
+}
+
+export type NextConfigWithRemoteEntries<T extends NextConfigLike> = Omit<
+  T,
+  'turbopack' | 'webpack'
+> & {
+  webpack: NextWebpackConfigFunction;
+  turbopack: NextTurbopackConfig;
+};
 
 /**
  * Adds aliases for Native ESM remote entries to a Next.js configuration.
@@ -58,7 +90,7 @@ export type NextConfigLike = object;
 export function withNextRemoteEntries<T extends NextConfigLike>(
   nextConfig: T,
   options: NextIntegrationOptions,
-): T & { webpack: NextWebpackConfigFunction; turbopack: NextTurbopackConfig } {
+): NextConfigWithRemoteEntries<T> {
   const previousWebpack = getWebpackConfigFunction(nextConfig);
   const previousTurbopack = getTurbopackConfig(nextConfig);
   const turbopackRoot = getTurbopackRoot(nextConfig, options, previousTurbopack);
@@ -100,7 +132,7 @@ export function withNextRemoteEntries<T extends NextConfigLike>(
         ...turbopackAliases,
       },
     },
-  } as T & { webpack: NextWebpackConfigFunction; turbopack: NextTurbopackConfig };
+  } as NextConfigWithRemoteEntries<T>;
 }
 
 function getWebpackConfigFunction(nextConfig: object): NextWebpackConfigFunction | undefined {
