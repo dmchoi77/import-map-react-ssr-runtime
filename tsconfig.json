@@ -13,6 +13,8 @@
     "packages/**/*.ts",
     "playwright.basic.config.ts",
     "playwright.react-vite.example.config.ts",
+    "playwright.next.example.config.ts",
+    "playwright.next.example.turbopack.config.ts",
     "vitest.config.ts"
   ]
 }

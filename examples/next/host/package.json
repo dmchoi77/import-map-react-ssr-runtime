@@ -1,0 +1,25 @@
+{
+  "name": "@mfe-ssr/example-next-host",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "build:turbopack": "next build --turbopack",
+    "start": "next start",
+    "dev": "next dev",
+    "dev:turbopack": "next dev --turbopack",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mfe-ssr/next": "workspace:*",
+    "next": "15.5.7",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.8.0"
+  }
+}

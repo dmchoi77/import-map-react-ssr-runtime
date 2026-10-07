@@ -4,3 +4,4 @@ dist/
 .context/
 playwright-report/
 test-results/
+*.tsbuildinfo

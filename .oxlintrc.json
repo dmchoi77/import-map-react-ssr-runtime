@@ -9,6 +9,7 @@
     ".next/**",
     "dist/**",
     "fixtures/next-host/next-env.d.ts",
+    "examples/next/host/next-env.d.ts",
     "node_modules/**"
   ]
 }
