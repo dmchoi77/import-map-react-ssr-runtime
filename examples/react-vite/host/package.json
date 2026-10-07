@@ -1,0 +1,25 @@
+{
+  "name": "@mfe-ssr/example-react-vite-host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build --config vite.client.config.ts && vite build --config vite.server.config.ts",
+    "start": "node ./server.mjs",
+    "dev": "vite --config vite.dev.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mfe-ssr/import-map": "workspace:*",
+    "@mfe-ssr/node": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.8.0",
+    "vite": "^7.3.6"
+  }
+}

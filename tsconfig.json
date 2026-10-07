@@ -8,5 +8,11 @@
     "skipLibCheck": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["e2e/**/*.ts", "packages/**/*.ts", "playwright.basic.config.ts", "vitest.config.ts"]
+  "include": [
+    "e2e/**/*.ts",
+    "packages/**/*.ts",
+    "playwright.basic.config.ts",
+    "playwright.react-vite.example.config.ts",
+    "vitest.config.ts"
+  ]
 }

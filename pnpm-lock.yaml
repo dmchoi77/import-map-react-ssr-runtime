@@ -33,6 +33,53 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@22.20.5)(happy-dom@16.8.1)
 
+  examples/react-vite/host:
+    dependencies:
+      '@mfe-ssr/import-map':
+        specifier: workspace:*
+        version: link:../../../packages/import-map
+      '@mfe-ssr/node':
+        specifier: workspace:*
+        version: link:../../../packages/node
+      react:
+        specifier: ^19.0.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.3.0(react@19.3.0)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.5
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.0.0
+        version: 19.3.0(@types/react@19.3.0)
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@22.20.5)
+
+  examples/react-vite/remote:
+    dependencies:
+      react:
+        specifier: ^19.0.0
+        version: 19.3.0
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.3.0
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@22.20.5)
+
   fixtures/next-host:
     dependencies:
       '@mfe-ssr/import-map':
