@@ -4,5 +4,12 @@
   "semi": true,
   "singleQuote": true,
   "trailingComma": "all",
-  "ignorePatterns": [".context/**", ".omx/**", "dist/**", "node_modules/**"]
+  "ignorePatterns": [
+    ".context/**",
+    ".omx/**",
+    ".output/**",
+    "dist/**",
+    "node_modules/**",
+    "**/routeTree.gen.ts"
+  ]
 }

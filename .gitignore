@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .next/
+.output/
 .context/
 playwright-report/
 test-results/
